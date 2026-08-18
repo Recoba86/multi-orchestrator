@@ -1,0 +1,13 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+._*
+
+# Backups and temporary files
+*.backup.*
+*.tmp
+*.log
+*.swp
+
+# Local test runs
+/tmp/

@@ -1,0 +1,12 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[agents]
+# Codex CLI 0.144.1 accepts this documented legacy alias, while rejecting
+# max_concurrent_threads_per_session and the two default_subagent_* keys.
+max_threads = 6
+interrupt_message = true
+
+[agents.luna_max_worker]
+description = "A focused GPT-5.6 Luna Max worker for narrow, bounded tasks delegated by the Sol High orchestration parent."
+config_file = "agents/luna_max_worker.toml"

@@ -1,0 +1,6 @@
+model = "nine-router/gcli/grok-4.6-high"
+model_reasoning_effort = "high"
+
+[agents]
+max_threads = 6
+interrupt_message = true
