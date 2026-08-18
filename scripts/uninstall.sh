@@ -34,10 +34,23 @@ remove_dir_if_empty() {
   fi
 }
 
-if [[ -f "${MANIFEST_FILE}" ]]; then
-  echo "Found install manifest: ${MANIFEST_FILE}"
-  
-  python3 -c '
+if [[ ! -f "${MANIFEST_FILE}" ]]; then
+  echo "[UNINSTALL_OWNERSHIP_UNKNOWN] No installation manifest found at ${MANIFEST_FILE}." >&2
+  echo "                              Safe automatic uninstallation cannot determine file ownership." >&2
+  echo "                              Aborting to prevent destructive modification of unknown or un-tracked files." >&2
+  exit 1
+fi
+
+# Validate manifest syntax
+if ! python3 -c "import json, sys; json.load(open(sys.argv[1]))" "${MANIFEST_FILE}" 2>/dev/null; then
+  echo "[ERROR] Installation manifest at ${MANIFEST_FILE} is malformed or corrupt." >&2
+  echo "        Safe automatic uninstallation aborted to prevent destructive actions." >&2
+  exit 1
+fi
+
+echo "Found install manifest: ${MANIFEST_FILE}"
+
+python3 -c '
 import json, os, sys, hashlib
 
 manifest_path = sys.argv[1]
@@ -80,34 +93,8 @@ for path, info in installed_files.items():
         print(f"[REMOVED] Cleanly removed package file: {path}")
 ' "${MANIFEST_FILE}"
 
-  rm -f "${MANIFEST_FILE}"
-  echo "Removed manifest file."
-
-else
-  echo "No manifest found, executing legacy fallback removal..."
-  remove_file() {
-    local target="$1"
-    if [[ -f "${target}" ]]; then
-      rm -f "${target}"
-      echo "Removed: ${target}"
-    fi
-  }
-
-  remove_file "${TARGET_HOME}/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md"
-  remove_file "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/SKILL.md"
-  remove_file "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/USAGE.md"
-  remove_file "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/agents/openai.yaml"
-  remove_file "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/SKILL.md"
-  remove_file "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/USAGE.md"
-  remove_file "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/agents/openai.yaml"
-
-  for agent_file in "${REPO_ROOT}/agents/"*.toml; do
-    if [[ -f "${agent_file}" ]]; then
-      filename="$(basename "${agent_file}")"
-      remove_file "${TARGET_HOME}/.codex/agents/${filename}"
-    fi
-  done
-fi
+rm -f "${MANIFEST_FILE}"
+echo "Removed manifest file."
 
 # Clean empty directories
 remove_dir_if_empty "${TARGET_HOME}/.agents/orchestrator-shared"
@@ -118,5 +105,5 @@ remove_dir_if_empty "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2"
 remove_dir_if_empty "${TARGET_HOME}/.codex/agents"
 
 echo ""
-echo "=== Uninstallation Completed ==="
+echo "=== Uninstallation Completed Successfully ==="
 echo "Note: Configuration profiles (.codex/*.config.toml) were left untouched."

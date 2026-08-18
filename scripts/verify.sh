@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Multi Orchestrator Comprehensive Verifier
-# Validates presence, syntax, all shipped leaf agent declarations, and critical safety contracts.
+# Validates presence, syntax, all shipped leaf agent declarations, exact Option A routing, and critical safety contracts.
 
 TARGET_HOME="${HOME}"
 
@@ -125,12 +125,83 @@ echo "--- Verifying Mutation Safety ---"
 assert_contains "${CORE}" "AMBIGUOUS_EXECUTION_STATE" "Core defines ambiguous write state"
 assert_contains "${CORE}" "Automatic fallback is **FORBIDDEN**" "Core forbids automatic fallback on ambiguous write"
 
-# 7. Routing Option A Invariant
-echo "--- Verifying Routing Option A ---"
-assert_contains "${CORE}" "PLUS_LUNA" "Core contains Plus Luna"
-assert_contains "${CORE}" "GEMINI_FLASH_HIGH" "Core contains Gemini Flash High"
-assert_contains "${CORE}" "DEEPSEEK_FLASH" "Core contains DeepSeek Flash"
-assert_contains "${CORE}" "DEEPSEEK_PRO" "Core contains DeepSeek Pro"
+# 7. Exact Option A Routing & Efforts Verification (Strict Ordering & Effort Parsing)
+echo "--- Verifying Exact Option A Routing & Efforts ---"
+if ! python3 -c '
+import sys, re
+
+core_path = sys.argv[1]
+with open(core_path, "r", encoding="utf-8") as f:
+    text = f.read()
+
+# Extract Section 4 text
+sec4_match = re.search(r"## 4\. Logical Roles & Initial Release Routing.*?(?=---|\Z)", text, re.DOTALL)
+if not sec4_match:
+    print("[FAIL] Section 4 Routing not found in Core", file=sys.stderr)
+    sys.exit(1)
+
+sec4 = sec4_match.group(0)
+
+# Expected chains: list of (attempt, endpoint, effort)
+expected_scout = [
+    (1, "GEMINI_FLASH_HIGH", "high"),
+    (2, "DEEPSEEK_FLASH", "high"),
+    (3, "PLUS_LUNA", "medium")
+]
+
+expected_standard = [
+    (1, "PLUS_LUNA", "high"),
+    (2, "GEMINI_FLASH_HIGH", "high"),
+    (3, "DEEPSEEK_FLASH", "high")
+]
+
+expected_deep = [
+    (1, "DEEPSEEK_PRO", "max"),
+    (2, "PLUS_LUNA", "max"),
+    (3, "GEMINI_FLASH_HIGH", "max")
+]
+
+def verify_chain(role_name, expected_entries):
+    role_block_match = re.search(rf"{role_name}:.*?(?=\n  [A-Z_]+:|\n```|\Z)", sec4, re.DOTALL)
+    if not role_block_match:
+        print(f"[FAIL] Role block {role_name} missing", file=sys.stderr)
+        sys.exit(1)
+    block = role_block_match.group(0)
+    for att, ep, eff in expected_entries:
+        entry_pattern = rf"attempt:\s*{att}\s+endpoint:\s*{ep}\s+model:\s*\S+\s+effort:\s*{eff}"
+        if not re.search(entry_pattern, block):
+            print(f"[FAIL] Exact routing entry missing or mismatched for {role_name} Attempt {att} (Expected {ep} / {eff})", file=sys.stderr)
+            sys.exit(1)
+    print(f"[PASS] Exact {role_name} routing chain and efforts verified")
+
+verify_chain("SCOUT", expected_scout)
+verify_chain("STANDARD_WORKER", expected_standard)
+verify_chain("DEEP_WORKER", expected_deep)
+
+# Verify Base Verifier Pool in Section 6.B
+sec6_match = re.search(r"## 6\. Implementer-Aware Independent Verification.*?(?=---|\Z)", text, re.DOTALL)
+if not sec6_match:
+    print("[FAIL] Section 6 Verification not found in Core", file=sys.stderr)
+    sys.exit(1)
+
+sec6 = sec6_match.group(0)
+expected_pool = [
+    "`GEMINI_FLASH_HIGH` (effort: high)",
+    "`DEEPSEEK_PRO` (effort: high)",
+    "`PLUS_LUNA` (effort: high)"
+]
+for p in expected_pool:
+    if p not in sec6:
+        print(f"[FAIL] Base Verifier Pool candidate {p} missing in Section 6.B", file=sys.stderr)
+        sys.exit(1)
+
+print("[PASS] Exact Base Verifier Pool candidates and efforts verified")
+' "${CORE}"; then
+  echo "[FAIL] Exact Option A Routing verification failed" >&2
+  FAILED=1
+else
+  echo "[PASS] Exact Option A Routing & Efforts verified"
+fi
 
 echo ""
 if [[ "${FAILED}" -ne 0 ]]; then

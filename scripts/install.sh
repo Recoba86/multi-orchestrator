@@ -40,92 +40,126 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "Mode: DRY RUN (no modifications will be made)"
 fi
 
-get_sha256() {
-  local file="$1"
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "${file}" | awk '{print $1}'
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "${file}" | awk '{print $1}'
-  else
-    python3 -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" "${file}"
+# Pre-validate existing manifest if present
+if [[ -f "${MANIFEST_FILE}" ]]; then
+  if ! python3 -c "import json, sys; json.load(open(sys.argv[1]))" "${MANIFEST_FILE}" 2>/dev/null; then
+    echo "[ERROR] Existing manifest at ${MANIFEST_FILE} is malformed or corrupt." >&2
+    echo "        Installation aborted to prevent overwriting ownership/backup history." >&2
+    exit 1
   fi
-}
-
-# Temporary manifest tracking file during install
-TEMP_MANIFEST="$(mktemp)"
-echo "{" > "${TEMP_MANIFEST}"
-echo '  "version": 1,' >> "${TEMP_MANIFEST}"
-echo '  "installed_files": {' >> "${TEMP_MANIFEST}"
-
-FIRST_ENTRY=1
-
-install_tracked_file() {
-  local src="$1"
-  local dest="$2"
-  local dest_dir
-  dest_dir="$(dirname "${dest}")"
-  local backup_path=""
-
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    echo "[DRY-RUN] Would install: ${src} -> ${dest}"
-    return 0
-  fi
-
-  mkdir -p "${dest_dir}"
-
-  if [[ -f "${dest}" ]]; then
-    backup_path="${dest}.pre-orchestrator-backup.$(date +%s)"
-    echo "Backing up pre-existing file: ${dest} -> ${backup_path}"
-    cp -p "${dest}" "${backup_path}"
-  fi
-
-  cp -p "${src}" "${dest}"
-  local installed_sha
-  installed_sha="$(get_sha256 "${dest}")"
-  echo "Installed: ${dest}"
-
-  if [[ "${FIRST_ENTRY}" -eq 0 ]]; then
-    echo "," >> "${TEMP_MANIFEST}"
-  fi
-  FIRST_ENTRY=0
-
-  # Write JSON entry
-  echo -n "    \"${dest}\": {\"installed_sha256\": \"${installed_sha}\", \"backup_path\": \"${backup_path}\"}" >> "${TEMP_MANIFEST}"
-}
-
-# 1. Install Shared Core
-install_tracked_file "${REPO_ROOT}/core/ORCHESTRATOR_CORE.md" "${SHARED_DIR}/ORCHESTRATOR_CORE.md"
-
-# 2. Install Skills
-install_tracked_file "${REPO_ROOT}/skills/sol-luna-orchestrator-v2/SKILL.md" "${SKILLS_DIR}/sol-luna-orchestrator-v2/SKILL.md"
-install_tracked_file "${REPO_ROOT}/skills/sol-luna-orchestrator-v2/USAGE.md" "${SKILLS_DIR}/sol-luna-orchestrator-v2/USAGE.md"
-install_tracked_file "${REPO_ROOT}/skills/sol-luna-orchestrator-v2/agents/openai.yaml" "${SKILLS_DIR}/sol-luna-orchestrator-v2/agents/openai.yaml"
-
-install_tracked_file "${REPO_ROOT}/skills/grok-orchestrator-v2/SKILL.md" "${SKILLS_DIR}/grok-orchestrator-v2/SKILL.md"
-install_tracked_file "${REPO_ROOT}/skills/grok-orchestrator-v2/USAGE.md" "${SKILLS_DIR}/grok-orchestrator-v2/USAGE.md"
-install_tracked_file "${REPO_ROOT}/skills/grok-orchestrator-v2/agents/openai.yaml" "${SKILLS_DIR}/grok-orchestrator-v2/agents/openai.yaml"
-
-# 3. Install Agent Definitions
-for agent_file in "${REPO_ROOT}/agents/"*.toml; do
-  if [[ -f "${agent_file}" ]]; then
-    filename="$(basename "${agent_file}")"
-    install_tracked_file "${agent_file}" "${CODEX_AGENTS_DIR}/${filename}"
-  fi
-done
-
-# Close JSON manifest
-echo "" >> "${TEMP_MANIFEST}"
-echo '  }' >> "${TEMP_MANIFEST}"
-echo "}" >> "${TEMP_MANIFEST}"
-
-if [[ "${DRY_RUN}" -eq 0 ]]; then
-  mkdir -p "$(dirname "${MANIFEST_FILE}")"
-  mv "${TEMP_MANIFEST}" "${MANIFEST_FILE}"
-else
-  rm -f "${TEMP_MANIFEST}"
 fi
 
-# 4. Install Config Profiles (only if absent)
+# Execute Python installer helper for robust atomic tracking and backup preservation
+python3 -c '
+import sys, os, json, shutil, hashlib, time
+
+dry_run = int(sys.argv[1])
+repo_root = sys.argv[2]
+target_home = sys.argv[3]
+manifest_path = sys.argv[4]
+
+def get_sha256(path):
+    if not os.path.exists(path):
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
+
+# Load existing manifest if present
+existing_manifest = {}
+if os.path.exists(manifest_path):
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            existing_manifest = json.load(f).get("installed_files", {})
+    except Exception as e:
+        print(f"[ERROR] Failed to read existing manifest: {e}", file=sys.stderr)
+        sys.exit(1)
+
+# Files to install: (source_rel, dest_full)
+files_to_install = [
+    (os.path.join(repo_root, "core/ORCHESTRATOR_CORE.md"), os.path.join(target_home, ".agents/orchestrator-shared/ORCHESTRATOR_CORE.md")),
+    (os.path.join(repo_root, "skills/sol-luna-orchestrator-v2/SKILL.md"), os.path.join(target_home, ".agents/skills/sol-luna-orchestrator-v2/SKILL.md")),
+    (os.path.join(repo_root, "skills/sol-luna-orchestrator-v2/USAGE.md"), os.path.join(target_home, ".agents/skills/sol-luna-orchestrator-v2/USAGE.md")),
+    (os.path.join(repo_root, "skills/sol-luna-orchestrator-v2/agents/openai.yaml"), os.path.join(target_home, ".agents/skills/sol-luna-orchestrator-v2/agents/openai.yaml")),
+    (os.path.join(repo_root, "skills/grok-orchestrator-v2/SKILL.md"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/SKILL.md")),
+    (os.path.join(repo_root, "skills/grok-orchestrator-v2/USAGE.md"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/USAGE.md")),
+    (os.path.join(repo_root, "skills/grok-orchestrator-v2/agents/openai.yaml"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/agents/openai.yaml")),
+]
+
+agents_dir = os.path.join(repo_root, "agents")
+for agent_file in sorted(os.listdir(agents_dir)):
+    if agent_file.endswith(".toml"):
+        src_path = os.path.join(agents_dir, agent_file)
+        dest_path = os.path.join(target_home, ".codex/agents", agent_file)
+        files_to_install.append((src_path, dest_path))
+
+new_manifest_installed_files = {}
+
+for src, dest in files_to_install:
+    dest_dir = os.path.dirname(dest)
+    dest_exists = os.path.exists(dest)
+    current_dest_sha = get_sha256(dest) if dest_exists else None
+    src_sha = get_sha256(src)
+
+    # Check if file was previously tracked in manifest
+    prev_info = existing_manifest.get(dest)
+    backup_path = None
+
+    if prev_info:
+        # File was previously installed by package
+        original_backup = prev_info.get("backup_path")
+        prev_installed_sha = prev_info.get("installed_sha256")
+
+        # Invariant: preserve original pre-install backup reference
+        backup_path = original_backup
+
+        if current_dest_sha != prev_installed_sha:
+            # User modified the installed file! Preserve user modification safely
+            user_backup = f"{dest}.user-modified-backup.{int(time.time())}"
+            if not dry_run:
+                shutil.copy2(dest, user_backup)
+            print(f"[WARN] User modification detected on {dest}. Backed up to {user_backup}")
+    else:
+        # File was NOT previously installed by package. If it exists, it is a pre-existing user file!
+        if dest_exists:
+            backup_path = f"{dest}.pre-orchestrator-backup.{int(time.time())}"
+            # Ensure unique backup filename
+            counter = 1
+            while os.path.exists(backup_path):
+                backup_path = f"{dest}.pre-orchestrator-backup.{int(time.time())}_{counter}"
+                counter += 1
+            if not dry_run:
+                shutil.copy2(dest, backup_path)
+            print(f"Backing up pre-existing file: {dest} -> {backup_path}")
+
+    if dry_run:
+        print(f"[DRY-RUN] Would install: {src} -> {dest}")
+    else:
+        os.makedirs(dest_dir, exist_ok=True)
+        shutil.copy2(src, dest)
+        print(f"Installed: {dest}")
+
+    new_manifest_installed_files[dest] = {
+        "installed_sha256": src_sha,
+        "backup_path": backup_path
+    }
+
+if not dry_run:
+    # Atomically write manifest
+    manifest_data = {
+        "version": 1,
+        "installed_files": new_manifest_installed_files
+    }
+    manifest_dir = os.path.dirname(manifest_path)
+    os.makedirs(manifest_dir, exist_ok=True)
+    temp_manifest_file = f"{manifest_path}.tmp.{os.getpid()}"
+    with open(temp_manifest_file, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+    os.replace(temp_manifest_file, manifest_path)
+' "${DRY_RUN}" "${REPO_ROOT}" "${TARGET_HOME}" "${MANIFEST_FILE}"
+
+# Install Config Profiles (only if absent)
 install_config_example() {
   local src="$1"
   local dest="$2"
