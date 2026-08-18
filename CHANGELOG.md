@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-08-19
 
 ### Added
-- **Canonical Release:** Initial public release of Orchestrator V2 architecture.
+- **Canonical Release:** Initial public release of Multi Orchestrator architecture.
 - **Dual Parent Boss Profiles:** Support for Native Sol Boss (`gpt-5.6-sol`) and Alternate Grok Boss (`grok-4.6-high`).
 - **Deterministic Role Chains:** 3-attempt fallback chains for `SCOUT`, `STANDARD_WORKER`, and `DEEP_WORKER`.
 - **Implementer-Aware Verification:** Strict enforcement that implementers never verify their own work, with explicit `VERIFIER_CHAIN_EXHAUSTED` handling.

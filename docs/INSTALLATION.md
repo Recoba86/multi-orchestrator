@@ -1,4 +1,4 @@
-# Orchestrator V2 — Installation & Configuration Guide
+# Multi Orchestrator — Installation & Configuration Guide
 
 ## 1. Quick Installation
 

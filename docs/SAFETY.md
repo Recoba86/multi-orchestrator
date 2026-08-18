@@ -1,4 +1,4 @@
-# Orchestrator V2 — Safety Invariants & Failure Taxonomy
+# Multi Orchestrator — Safety Invariants & Failure Taxonomy
 
 ## 1. Safety Invariants
 

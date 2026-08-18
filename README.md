@@ -1,8 +1,8 @@
-# Orchestrator V2
+# Multi Orchestrator
 
 A deterministic, multi-agent orchestration architecture for OpenAI Codex and CLI workflows.
 
-Orchestrator V2 coordinates specialized AI model subagents across complex software engineering tasks using centralized planning, strict Hub-and-Spoke isolation, implementer-aware independent verification, and fail-closed safety contracts.
+Multi Orchestrator coordinates specialized AI model subagents across complex software engineering tasks using centralized planning, strict Hub-and-Spoke isolation, implementer-aware independent verification, and fail-closed safety contracts.
 
 ---
 
@@ -47,8 +47,8 @@ Orchestrator V2 coordinates specialized AI model subagents across complex softwa
 
 ### 1. Install
 ```bash
-git clone https://github.com/amin/orchestrator.git
-cd orchestrator
+git clone https://github.com/Recoba86/multi-orchestrator.git
+cd multi-orchestrator
 ./scripts/install.sh
 ```
 

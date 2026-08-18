@@ -1,11 +1,11 @@
-# Publication Readiness Report — Orchestrator V2 (v1.0.0)
+# Publication Readiness Report — Multi Orchestrator (v1.0.0)
 
 ## 1. Executive Summary
-The locked local canonical release (SHA-256: `e4d93ffae22b96bf1194f01727812ffcdf77f40028f8d74ed61d40d962c1c71e`) has been sanitized, portabilized, and packaged into a standalone repository structure located at `/Users/amin/Documents/Witamin-Game/orchestrator-public`.
+The locked local canonical release (SHA-256: `e4d93ffae22b96bf1194f01727812ffcdf77f40028f8d74ed61d40d962c1c71e`) has been sanitized, portabilized, and packaged into a standalone repository structure located at `$HOME/.../multi-orchestrator`.
 
 ## 2. Security & Sanitization
 - **Secret Audit:** 100% clean. Zero API keys, tokens, passwords, or personal credentials exist in the package.
-- **Path Portabilization:** All hard-coded `/Users/amin/` filesystem references in skill manifests were replaced with standard `$HOME`/`~` paths.
+- **Path Portabilization:** All hard-coded `$HOME/` filesystem references in skill manifests were replaced with standard `$HOME`/`~` paths.
 - **Config Templating:** Machine-specific profile configs were templated into `.example.toml` format.
 
 ## 3. Automated Tooling & Clean-Room Testing
@@ -22,5 +22,5 @@ The locked local canonical release (SHA-256: `e4d93ffae22b96bf1194f01727812ffcdf
 - Standard MIT License included in repository root as default.
 
 ## 6. Local Git Status
-- Git repository initialized locally in `/Users/amin/Documents/Witamin-Game/orchestrator-public`.
+- Git repository initialized locally in `$HOME/.../multi-orchestrator`.
 - Clean initial commit prepared. No remote repository created and no network pushes performed.

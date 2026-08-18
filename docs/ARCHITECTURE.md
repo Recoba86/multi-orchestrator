@@ -1,7 +1,7 @@
-# Orchestrator V2 — Architecture Specification
+# Multi Orchestrator — Architecture Specification
 
 ## 1. Overview
-Orchestrator V2 is an engine-agnostic multi-agent orchestration architecture designed for local execution runtimes (such as OpenAI Codex CLI). It establishes a deterministic, safe, and observable framework for delegating complex software engineering workflows across specialized AI model agents.
+Multi Orchestrator is an engine-agnostic multi-agent orchestration architecture designed for local execution runtimes (such as OpenAI Codex CLI). It establishes a deterministic, safe, and observable framework for delegating complex software engineering workflows across specialized AI model agents.
 
 ---
 
