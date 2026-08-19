@@ -354,6 +354,7 @@ FINAL_BOSS_DECISION:
   mission_id: string                      # Retained mission identifier
   workspace_root: string                  # Retained workspace root
   repository_identity: string             # Retained repository identity
+  boss_child_id: string                   # Retained Dedicated Boss child ID
   decision: string                        # COMPLETE | INCOMPLETE | BLOCKED | REWORK_REQUIRED
   summary: string                         # Factual mission summary
   completed_tasks: [string]               # List of verified logical task IDs
@@ -569,6 +570,7 @@ boss:
   required_endpoint: string               # GROK_4_6_HIGH | SOL_HIGH
   requested_model: string                 # Canonical model string
   requested_effort: string                # high
+  requested_fork_turns: string            # MUST be "none"
   child_id: string                        # Actual task_name of Boss child
   actual_agent_type: string               # Agent type used
   actual_model: string                    # Observable actual model (or UNPROVEN)
@@ -584,10 +586,11 @@ actions:
     boss_child_id: string
     logical_task_id: string
     role: string
-    boss_requested: { endpoint: string, model: string, effort: string }
+    boss_requested: { endpoint: string, model: string, effort: string, fork_turns: string }
     controller_validation: { result: string, reason: string } # VALID | REJECTED
     identity_validation: { mission_match: boolean, workspace_match: boolean, repository_match: boolean, boss_match: boolean, result: string } # VALID | REJECTED
-    controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string }
+    controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string, fork_turns: string }
+    context_isolation: { packet_only: boolean, requested_fork_turns: string, inherited_parent_turns: string } # inherited_parent_turns is UNPROVEN if unobservable
     binding_match: boolean
     result: { status: string, mutation_state: string, errors: [string] }
 

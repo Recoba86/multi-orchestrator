@@ -9,8 +9,8 @@ Validates:
   2. BOSS_ACTION_PACKET (including FORK_TURNS_NONE_REQUIRED)
   3. CHILD_EXECUTION_RESULT
   4. BOSS_FOLLOWUP_PACKET
-  5. FINAL_BOSS_DECISION
-- Trace identity completeness & multi-repository distinction
+  5. FINAL_BOSS_DECISION (including boss_child_id and FINAL_DECISION_CONTEXT_MISMATCH)
+- Trace identity completeness, fork_turns enforcement & multi-repository distinction
 """
 
 import unittest
@@ -39,7 +39,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "starting_branch": "develop",
-            "starting_sha": "ec6825e96c0f1449cdd20e057a6d0adf25fc7be4",
+            "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
             "boss_child_id": "sol_boss_test_100"
         }
 
@@ -213,18 +213,40 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "mission_id": "mission-test-100",
             "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
+            "boss_child_id": "sol_boss_test_100",
             "decision": "COMPLETE"
         }
         ok, err = validate_final_boss_decision(decision_pkt, self.valid_identity)
         self.assertTrue(ok)
         self.assertIsNone(err)
 
+        # Mismatches
+        bad_dec = dict(decision_pkt, mission_id="foreign-mission")
+        ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FINAL_DECISION_CONTEXT_MISMATCH", err)
+
+        bad_dec = dict(decision_pkt, workspace_root="/foreign/workspace")
+        ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FINAL_DECISION_CONTEXT_MISMATCH", err)
+
+        bad_dec = dict(decision_pkt, repository_identity="https://github.com/Other/repo.git")
+        ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FINAL_DECISION_CONTEXT_MISMATCH", err)
+
+        bad_dec = dict(decision_pkt, boss_child_id="foreign_boss_child")
+        ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FINAL_DECISION_CONTEXT_MISMATCH", err)
+
         bad_dec = dict(decision_pkt, decision="INVALID_STATE")
         ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
         self.assertFalse(ok)
         self.assertIn("Invalid decision", err)
 
-    def test_trace_identity_completeness(self):
+    def test_trace_identity_completeness_and_fork_turns(self):
         valid_trace = {
             "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
             "workspace": {
@@ -232,21 +254,63 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
                 "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
                 "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
                 "branch_at_start": "develop",
-                "starting_sha": "ec6825e96c0f1449cdd20e057a6d0adf25fc7be4",
+                "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
                 "identity_match": True
-            }
+            },
+            "boss": {
+                "requested_fork_turns": "none",
+                "child_id": "sol_boss_test_100"
+            },
+            "actions": [
+                {
+                    "action_id": "act-1",
+                    "controller_executed": {
+                        "child_id": "scout-1",
+                        "fork_turns": "none"
+                    },
+                    "context_isolation": {
+                        "packet_only": True,
+                        "requested_fork_turns": "none",
+                        "inherited_parent_turns": "UNPROVEN"
+                    }
+                }
+            ]
         }
         ok, err = validate_trace_identity_completeness(valid_trace)
         self.assertTrue(ok)
         self.assertIsNone(err)
 
-    def test_trace_missing_workspace_fails(self):
+    def test_trace_missing_fork_turns_fails(self):
         bad_trace = {
-            "mission": {"mission_id": "mission-test-100"}
+            "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
+            "workspace": {
+                "requested_workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
+                "branch_at_start": "develop",
+                "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
+                "identity_match": True
+            },
+            "boss": {
+                "requested_fork_turns": "none"
+            },
+            "actions": [
+                {
+                    "action_id": "act-1",
+                    "controller_executed": {
+                        "child_id": "scout-1"
+                        # fork_turns missing
+                    },
+                    "context_isolation": {
+                        "packet_only": True,
+                        "requested_fork_turns": "none"
+                    }
+                }
+            ]
         }
         ok, err = validate_trace_identity_completeness(bad_trace)
         self.assertFalse(ok)
-        self.assertIn("Missing workspace section", err)
+        self.assertIn("fork_turns", err)
 
 if __name__ == "__main__":
     unittest.main()

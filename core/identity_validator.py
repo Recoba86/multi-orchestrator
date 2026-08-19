@@ -113,13 +113,16 @@ def validate_final_boss_decision(decision: Dict[str, Any], mission_identity: Dic
         return False, "FINAL_BOSS_DECISION must be a dictionary"
     
     if decision.get("mission_id") != mission_identity.get("mission_id"):
-        return False, f"MISSION_CONTEXT_MISMATCH: final decision mission_id ({decision.get('mission_id')}) != mission ({mission_identity.get('mission_id')})"
+        return False, f"FINAL_DECISION_CONTEXT_MISMATCH: final decision mission_id ({decision.get('mission_id')}) != mission ({mission_identity.get('mission_id')})"
     
     if decision.get("workspace_root") != mission_identity.get("workspace_root"):
-        return False, f"MISSION_CONTEXT_MISMATCH: final decision workspace_root ({decision.get('workspace_root')}) != mission ({mission_identity.get('workspace_root')})"
+        return False, f"FINAL_DECISION_CONTEXT_MISMATCH: final decision workspace_root ({decision.get('workspace_root')}) != mission ({mission_identity.get('workspace_root')})"
     
     if decision.get("repository_identity") != mission_identity.get("repository_identity"):
-        return False, f"MISSION_CONTEXT_MISMATCH: final decision repository_identity ({decision.get('repository_identity')}) != mission ({mission_identity.get('repository_identity')})"
+        return False, f"FINAL_DECISION_CONTEXT_MISMATCH: final decision repository_identity ({decision.get('repository_identity')}) != mission ({mission_identity.get('repository_identity')})"
+    
+    if decision.get("boss_child_id") != mission_identity.get("boss_child_id"):
+        return False, f"FINAL_DECISION_CONTEXT_MISMATCH: final decision boss_child_id ({decision.get('boss_child_id')}) != mission boss ({mission_identity.get('boss_child_id')})"
     
     dec_val = decision.get("decision")
     if dec_val not in ["COMPLETE", "INCOMPLETE", "BLOCKED", "REWORK_REQUIRED"]:
@@ -139,5 +142,28 @@ def validate_trace_identity_completeness(trace_data: Dict[str, Any]) -> Tuple[bo
     
     if not workspace.get("identity_match"):
         return False, "Trace records workspace identity mismatch"
+    
+    boss = trace_data.get("boss", {})
+    if not boss:
+        return False, "Missing boss section in mission trace"
+    
+    if boss.get("requested_fork_turns") != "none":
+        return False, f"Trace records invalid boss requested_fork_turns: {boss.get('requested_fork_turns')}"
+    
+    actions = trace_data.get("actions", [])
+    for idx, act in enumerate(actions):
+        exe = act.get("controller_executed", {})
+        if not exe:
+            return False, f"Missing controller_executed in action [{idx+1}]"
+        if exe.get("fork_turns") != "none":
+            return False, f"Trace records invalid or non-none fork_turns in action [{idx+1}]: {exe.get('fork_turns')}"
+        
+        ctx_iso = act.get("context_isolation", {})
+        if not ctx_iso:
+            return False, f"Missing context_isolation in action [{idx+1}]"
+        if not ctx_iso.get("packet_only"):
+            return False, f"Trace records packet_only != true in action [{idx+1}]"
+        if ctx_iso.get("requested_fork_turns") != "none":
+            return False, f"Trace records requested_fork_turns != none in context_isolation action [{idx+1}]"
     
     return True, None
