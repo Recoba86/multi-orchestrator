@@ -42,22 +42,31 @@ class PolicyValidator:
         if skill_name not in self.skill_boss_bindings:
             return False, "BOSS_BINDING_UNAVAILABLE: Unregistered skill", None
         binding = self.skill_boss_bindings[skill_name]
+        
         ep_id = binding.get("required_boss_endpoint")
+        if not ep_id:
+            return False, f"BOSS_BINDING_UNAVAILABLE: Missing required_boss_endpoint in skill binding for {skill_name}", None
         if ep_id not in self.endpoints:
             return False, f"BOSS_BINDING_UNAVAILABLE: Endpoint {ep_id} not in registry", None
         
+        req_model = binding.get("model")
+        if not req_model:
+            return False, f"BOSS_BINDING_UNAVAILABLE: Missing required model in skill binding for {skill_name}", None
+        
         ep = self.endpoints[ep_id]
         expected_model = ep.get("model")
-        req_model = binding.get("model")
-        if req_model and expected_model and req_model != expected_model:
+        if expected_model and req_model != expected_model:
             return False, f"BOSS_BINDING_UNAVAILABLE: Model mismatch for {ep_id} ({req_model} != {expected_model})", None
         
         req_effort = binding.get("effort")
-        if req_effort and req_effort not in ep.get("accepted_efforts", []):
+        if not req_effort:
+            return False, f"BOSS_BINDING_UNAVAILABLE: Missing required effort in skill binding for {skill_name}", None
+        
+        if req_effort not in ep.get("accepted_efforts", []):
             return False, f"BOSS_BINDING_UNAVAILABLE: Effort {req_effort} not in accepted_efforts {ep.get('accepted_efforts')}", None
         
         policy_max = ep.get("policy_max_effort")
-        if policy_max and req_effort:
+        if policy_max:
             eff_levels = {"low": 1, "medium": 2, "high": 3, "max": 4}
             if eff_levels.get(req_effort, 0) > eff_levels.get(policy_max, 0):
                 return False, f"BOSS_BINDING_UNAVAILABLE: Effort {req_effort} exceeds policy cap {policy_max}", None

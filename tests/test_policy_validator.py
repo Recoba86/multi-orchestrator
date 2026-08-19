@@ -29,6 +29,97 @@ class TestProductionPolicyValidator(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
 
+
+    def test_boss_binding_required_fields_and_validation(self):
+        # Test missing model, missing effort, wrong model, illegal effort, and policy cap via temp Core fixtures
+        core_yaml = """```yaml
+endpoints:
+  - id: SOL_HIGH
+    family: gpt
+    model: gpt-5.6-sol
+    accepted_efforts: [high]
+  - id: SOL_CAPPED
+    family: gpt
+    model: gpt-5.6-sol
+    accepted_efforts: [low, medium, high]
+    policy_max_effort: medium
+skill_boss_bindings:
+  valid-skill:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-sol
+    effort: high
+  missing-endpoint-skill:
+    model: gpt-5.6-sol
+    effort: high
+  missing-model-skill:
+    required_boss_endpoint: SOL_HIGH
+    effort: high
+  missing-effort-skill:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-sol
+  wrong-model-skill:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-luna
+    effort: high
+  illegal-effort-skill:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-sol
+    effort: low
+  capped-effort-skill:
+    required_boss_endpoint: SOL_CAPPED
+    model: gpt-5.6-sol
+    effort: high
+```"""
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
+            f.write(core_yaml)
+            temp_path = f.name
+        try:
+            fixture_validator = PolicyValidator(core_path=temp_path)
+            
+            # 1. Valid binding -> PASS
+            ok, err, binding = fixture_validator.validate_boss_binding("valid-skill")
+            self.assertTrue(ok)
+            self.assertIsNone(err)
+            self.assertEqual(binding["required_boss_endpoint"], "SOL_HIGH")
+
+            # 2. Missing endpoint -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("missing-endpoint-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("Missing required_boss_endpoint", err)
+
+            # 3. Missing model -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("missing-model-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("Missing required model", err)
+
+            # 4. Missing effort -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("missing-effort-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("Missing required effort", err)
+
+            # 5. Wrong model -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("wrong-model-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("Model mismatch", err)
+
+            # 6. Illegal effort -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("illegal-effort-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("not in accepted_efforts", err)
+
+            # 7. Effort above policy cap -> BLOCK (BOSS_BINDING_UNAVAILABLE)
+            ok, err, _ = fixture_validator.validate_boss_binding("capped-effort-skill")
+            self.assertFalse(ok)
+            self.assertIn("BOSS_BINDING_UNAVAILABLE", err)
+            self.assertIn("exceeds policy cap", err)
+        finally:
+            os.remove(temp_path)
+
     def test_controller_cannot_self_promote(self):
         ok, err = self.validator.validate_role_not_controller_self_promotion("ROOT_CONTROLLER", "BOSS")
         self.assertFalse(ok)
@@ -150,23 +241,56 @@ class TestProductionPolicyValidator(unittest.TestCase):
         self.assertIn("REJECT_MODEL_FAMILY_CONFLICT", err)
 
     def test_single_authority_dynamic_core_fixture(self):
-        # Proves changing Core fixture alters validator behavior without modifying validator source
+        # Proves changing Core model in fixture alters validator behavior dynamically without modifying validator source
+        # Endpoint ID GEMINI_FLASH_HIGH remains constant, but canonical model is changed to custom/changed-gemini-model
         custom_core = """```yaml
 endpoints:
-  - id: CUSTOM_TEST_ENDPOINT
-    family: custom
-    model: custom/model-1
-    accepted_efforts: [low]
+  - id: GEMINI_FLASH_HIGH
+    family: gemini
+    model: custom/changed-gemini-model
+    accepted_efforts: [high]
 ```"""
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
             f.write(custom_core)
             temp_path = f.name
         try:
             custom_validator = PolicyValidator(core_path=temp_path)
-            ok, _ = custom_validator.validate_requested_endpoint("CUSTOM_TEST_ENDPOINT")
+            
+            # 1. requested_model = old production Gemini model -> REJECT_REQUESTED_MODEL_MISMATCH
+            ok, err = custom_validator.validate_controller_execution_binding(
+                "GEMINI_FLASH_HIGH",
+                "nine-router/ag/gemini-3.7-flash-high",
+                "high",
+                "GEMINI_FLASH_HIGH",
+                "custom/changed-gemini-model",
+                "high"
+            )
+            self.assertFalse(ok)
+            self.assertIn("REJECT_REQUESTED_MODEL_MISMATCH", err)
+
+            # 2. requested_model = custom/changed-gemini-model and actual_model = custom/changed-gemini-model -> PASS
+            ok, err = custom_validator.validate_controller_execution_binding(
+                "GEMINI_FLASH_HIGH",
+                "custom/changed-gemini-model",
+                "high",
+                "GEMINI_FLASH_HIGH",
+                "custom/changed-gemini-model",
+                "high"
+            )
             self.assertTrue(ok)
-            ok, _ = custom_validator.validate_requested_endpoint("GEMINI_FLASH_HIGH")
-            self.assertFalse(ok) # Not in custom fixture
+            self.assertIsNone(err)
+
+            # 3. actual_model = old production model while endpoint ID is unchanged -> REJECT_CONTROLLER_MODEL_SUBSTITUTION
+            ok, err = custom_validator.validate_controller_execution_binding(
+                "GEMINI_FLASH_HIGH",
+                "custom/changed-gemini-model",
+                "high",
+                "GEMINI_FLASH_HIGH",
+                "nine-router/ag/gemini-3.7-flash-high",
+                "high"
+            )
+            self.assertFalse(ok)
+            self.assertIn("REJECT_CONTROLLER_MODEL_SUBSTITUTION", err)
         finally:
             os.remove(temp_path)
 
