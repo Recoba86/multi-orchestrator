@@ -96,4 +96,4 @@ For detailed developer and agent instructions, see:
 ## License & Security
 
 - **Security:** Please see [SECURITY.md](SECURITY.md) for vulnerability reporting.
-- **License:** Open Source. See [LICENSE](LICENSE) for details.
+- **License:** MIT. See [LICENSE](LICENSE).

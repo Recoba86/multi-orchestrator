@@ -48,11 +48,21 @@ git branch --show-current  # Must be 'develop' (or a feature branch)
   git checkout -b fix/<bug-name> develop
   ```
 
-### Step 3: Implementation & Local Validation
-Implement the changes within the assigned scope. Run static verification tests in clean-room environments:
+### Step 3: Implementation & Clean-Room Isolated Testing
+Implement the changes within the assigned scope. When validating installers, skills, or verifier scripts, **always use an isolated temporary directory** to ensure the live environment (`~/.agents`, `~/.codex`) is never touched:
+
 ```bash
-./scripts/verify.sh
+# Clean-Room Validation Pattern
+TMP_HOME="$(mktemp -d)"
+
+./scripts/install.sh --target-home "$TMP_HOME"
+./scripts/verify.sh --target-home "$TMP_HOME"
+./scripts/uninstall.sh --target-home "$TMP_HOME"
+
+rm -rf "$TMP_HOME"
 ```
+
+*Rule:* Never run `./scripts/install.sh` from `dev/` without `--target-home`. Plain `./scripts/verify.sh` tests your live environment, not the candidate!
 
 ### Step 4: Implementer-Independent Verification
 Following the Multi Orchestrator core invariant, independent review and test execution must be performed by a verifier distinct from the implementer.
@@ -71,8 +81,8 @@ git push origin develop
 - **No Blind Resets:** Never run `git reset --hard` or `git clean -fd` if unexpected changes exist. Inspect and report discrepancies.
 - **No Force Pushes:** Do not force-push (`git push -f`) to `main` or `develop`.
 - **Distinct Lifecycle States:**
-  - `IMPLEMENTATION_COMPLETE`: Code is written and passes local checks.
+  - `IMPLEMENTATION_COMPLETE`: Code is written and passes local isolated checks.
   - `VERIFICATION_COMPLETE`: Independent verifier has validated criteria with `PASS`.
   - `CANDIDATE_APPROVED`: All tests and safety invariants are satisfied.
   - `PROMOTED_TO_STABLE`: Merged into `main` in `stable/`.
-  - `DEPLOYED_TO_RUNTIME`: Installed via `scripts/install.sh` into `~/.agents` and `~/.codex`.
+  - `DEPLOYED_TO_RUNTIME`: Installed via `scripts/install.sh` from `stable/` into `~/.agents` and `~/.codex`.

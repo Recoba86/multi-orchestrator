@@ -10,18 +10,18 @@ DEV SOURCE (develop)
 Implementation & Unit Checks
        │
        ▼
-Implementer-Independent Verification
+Clean-Room Validation (scripts/install.sh & scripts/verify.sh with --target-home "$TMP_HOME")
        │
        ▼
-Clean-Room Validation (scripts/install.sh & scripts/verify.sh)
+Implementer-Independent Verification
        │
        ▼
 Candidate Approved
        │
-       ▼ (Explicit Merge / Promotion)
+       ▼ (Stage 1: Explicit Merge / Promotion)
 STABLE SOURCE (main)
        │
-       ▼ (Explicit Execution of scripts/install.sh)
+       ▼ (Stage 2: Explicit Deployment via scripts/install.sh)
 ACTIVE RUNTIME (~/.agents & ~/.codex)
 ```
 
@@ -30,7 +30,7 @@ ACTIVE RUNTIME (~/.agents & ~/.codex)
 ## 2. Promotion Preconditions
 Before promoting any candidate from `develop` to `main`:
 1. **Clean Worktree:** `dev/` must have a completely clean Git working tree.
-2. **Verification Passed:** All static verifier checks (`./scripts/verify.sh`) must pass with zero failures.
+2. **Clean-Room Verification Passed:** All static verifier checks (`./scripts/verify.sh --target-home "$TMP_HOME"`) must pass cleanly in an isolated temporary target.
 3. **Independent Audit Complete:** Verification must be conducted independently of the implementer.
 4. **Zero Blockers:** No open P0 or P1 safety blocker or unresolved ambiguous write state may exist.
 5. **Documentation Synchronized:** All affected documents (`README.md`, `docs/*.md`, `CHANGELOG.md`) must reflect the candidate behavior.
@@ -73,13 +73,15 @@ cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/stable
 
 ---
 
-## 5. Rollback Strategy
-If an unexpected issue arises post-deployment:
-1. **Identify Last Known-Good Stable Commit:** Inspect Git history on `main` (`git log --oneline -n 5`).
-2. **Revert / Checkout Stable Baseline:** Check out the previous stable commit in `stable/`.
-3. **Execute Safe Uninstaller / Reinstaller:**
+## 5. Safe Rollback Guidance
+If an unexpected defect is discovered in an active runtime deployment:
+1. **Stop & Assess:** If runtime or repository state is ambiguous, stop immediately rather than guessing or force-reverting.
+2. **Identify Last Known-Good Stable Baseline:** Locate the exact last known-good commit on `main` (or the previous release tag).
+3. **Restore Known-Good Source Baseline:** In `stable/`, checkout or merge the known-good commit through an explicit Git operation.
+4. **Re-Deploy from Known-Good Source:**
    ```bash
-   ./scripts/uninstall.sh
+   cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/stable
    ./scripts/install.sh
    ```
-4. **Verify Active Runtime:** Run `./scripts/verify.sh` to confirm safe baseline recovery.
+   *Note:* The installer preserves user modifications and restores tracked backups safely without requiring destructive manual uninstalls.
+5. **Verify Active Runtime:** Run `./scripts/verify.sh` to confirm the active runtime is fully functional.

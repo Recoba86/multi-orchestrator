@@ -17,7 +17,7 @@
 ## 2. Stable vs Dev Worktree Rules
 
 ### STABLE (`stable/` -> `main`)
-- **Purpose:** Known-good, audited, approved Multi Orchestrator source.
+- **Purpose:** Known-good, audited, approved Multi Orchestrator source baseline.
 - **Prohibitions:**
   - Do NOT implement features, fixes, or experiments directly in `stable/` or on `main`.
   - Do NOT assign worker agents write ownership inside `stable/`.
@@ -49,28 +49,39 @@ git rev-parse HEAD
 - **Active Runtime (`~/.agents` & `~/.codex`):** Where local AI execution environments (such as Codex CLI) load operational policies and skills.
 - **Absolute Rule:**
   - Do NOT treat `~/.agents` or `~/.codex` as a development source tree.
-  - Do NOT deploy `develop` directly to active runtime.
+  - Do NOT deploy `develop` directly to active runtime. Never run `./scripts/install.sh` from `dev/` without `--target-home`.
   - Do NOT symlink runtime files to the `dev/` worktree.
   - Runtime deployment is an explicit post-promotion step originating ONLY from approved Stable (`main`).
 
 ---
 
-## 5. Standard Development Workflow
+## 5. Candidate Validation & Development Workflow
 ```text
 dev/ (develop)
    │
    ├─► Feature / Fix Implementation
-   ├─► Automated & Clean-Room Tests (`scripts/verify.sh`, `scripts/install.sh`)
+   ├─► Clean-Room Isolated Validation (TMP_HOME="$(mktemp -d)")
+   │      ./scripts/install.sh --target-home "$TMP_HOME"
+   │      ./scripts/verify.sh --target-home "$TMP_HOME"
+   │      ./scripts/uninstall.sh --target-home "$TMP_HOME"
+   │      rm -rf "$TMP_HOME"
+   │
    ├─► Implementer-Independent Verification (`verifier != implementer`)
    ▼
 Approved Candidate
    │
-   ▼ (Explicit Promotion / Merge)
+   ▼ (Stage 1: Explicit Promotion / Merge to main)
 stable/ (main)
    │
-   ▼ (Explicit Deployment via scripts/install.sh)
+   ▼ (Stage 2: Explicit Deployment via scripts/install.sh)
 Active Runtime (~/.agents, ~/.codex)
 ```
+
+### Critical Separation: Dev is Not Stable
+- **Implementation complete** does NOT authorize promotion.
+- **Verification complete** does NOT automatically authorize deployment.
+- Promotion to `main` is an explicit action.
+- Deployment to runtime is a second, separate explicit action.
 
 ---
 
@@ -79,8 +90,9 @@ When Multi Orchestrator is used to develop or enhance Multi Orchestrator itself:
 1. **The running Active Stable orchestrator controls the mission.**
 2. **Worker assignments MUST target `dev/` or a feature worktree only.**
 3. **The running orchestrator MUST NOT mutate its own active runtime (`~/.agents`, `~/.codex`) mid-mission.**
-4. **Independent verification occurs on Dev candidate artifacts before promotion.**
-5. **Only after mission completion and promotion to `main` may the new version be deployed to active runtime.**
+4. **Candidate verification occurs in isolated temporary HOME directories (`--target-home`).**
+5. **Independent verification audits Dev candidate artifacts before promotion.**
+6. **Only after mission completion and promotion to `main` may the new version be deployed to active runtime.**
 
 ---
 
@@ -88,6 +100,7 @@ When Multi Orchestrator is used to develop or enhance Multi Orchestrator itself:
 Multi Orchestrator is governed by strict, fail-closed safety contracts:
 - **Strict Hub-and-Spoke (`TOPOLOGY_HUB_AND_SPOKE_ONLY`):** Boss coordinates; subagents are absolute leaf nodes. Subagents cannot spawn children, delegate to peers, or form nested chains. Parent prompt instructions cannot override this rule.
 - **Context Isolation (`fork_turns="none"`):** Subagents execute with zero parent history; all context is passed via self-contained packets (`WORKER_TASK_PACKET`, `VERIFICATION_PACKET`, `prior_attempt_summary`).
+- **Packet Invalidity Pre-Dispatch Check (`PACKET_INVALID`):** Invalid or incomplete task packets MUST NOT be dispatched. Packet construction/validation failure is a parent contract defect, not a provider failure, and MUST NOT trigger provider fallback.
 - **Independent Verification (`IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK`):** Implementers cannot verify their own changes. Verifier chain exhaustion leaves tasks `INCOMPLETE` without self-verification.
 - **Fail-Closed Mutation Safety:** Ambiguous execution states (`AMBIGUOUS_EXECUTION_STATE`) block secondary write retries.
 - **Dedicated Read-Only Reviewer:** Claude Opus 4.6 Thinking is strictly `READ_ONLY` (`write_ownership: NONE`).
@@ -96,7 +109,7 @@ Multi Orchestrator is governed by strict, fail-closed safety contracts:
 - **Normative Orchestration Policy & Schemas:** [`core/ORCHESTRATOR_CORE.md`](core/ORCHESTRATOR_CORE.md)
 - **Architecture Overview:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Safety Invariants & Failure Taxonomy:** [`docs/SAFETY.md`](docs/SAFETY.md)
-- **Model Registry & Routing:** [`docs/MODELS.md`](docs/MODELS.md)
+- **Model Registry & Routing Policy:** [`docs/MODELS.md`](docs/MODELS.md)
 - **Detailed Development Guide:** [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md)
 - **Release & Promotion Process:** [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)
 - **Self-Development Guide:** [`docs/SELF_DEVELOPMENT.md`](docs/SELF_DEVELOPMENT.md)

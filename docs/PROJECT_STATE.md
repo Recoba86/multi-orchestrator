@@ -14,15 +14,26 @@
 
 ---
 
-## 3. Current Stable Baseline
-- **Stable Baseline Commit:** `8dd05b7c2fba9d7f8c25e37e8b52ca9027053969` (Initial Release Locked)
-- *Note:* The commit hash above represents the current locked Stable release on `main`. Work occurring on `develop` does not advance Stable until explicit promotion.
+## 3. Stable Source Reference vs. Active Runtime Baseline
+
+### A. Current Stable Source
+- **Authoritative Ref:** `main` / `origin/main`
+- **Current SHA Discovery:**
+  ```bash
+  git rev-parse main
+  # or
+  git rev-parse origin/main
+  ```
+
+### B. Last Audited / Active Runtime Baseline (Before Governance Docs)
+- **Commit SHA:** `8dd05b7c2fba9d7f8c25e37e8b52ca9027053969`
+- *Note:* This represents the locked canonical baseline currently deployed in `~/.agents` and `~/.codex`. Future promotions to `main` advance the Stable source commit; runtime deployment is an explicit follow-up action.
 
 ---
 
 ## 4. Active Runtime State
 - **Runtime Locations:** `~/.agents` and `~/.codex`
-- **Deployed Baseline:** Tracks approved Stable (`main`), locked to canonical release v1.0.0.
+- **Current Deployment:** Tracks approved Stable (`main`), locked to canonical release v1.0.0.
 - **Direct Dev Deployment:** Prohibited.
 
 ---
