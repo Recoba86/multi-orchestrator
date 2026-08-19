@@ -1,12 +1,12 @@
 """
 Production Dynamic Policy Validator for Multi Orchestrator RC3.
-Derives routing, effort limits, endpoint registrations, and verifier policies
-directly from the authoritative Shared Core (ORCHESTRATOR_CORE.md).
+Derives routing, canonical model strings, effort limits, endpoint registrations,
+and verifier policies directly from the authoritative Shared Core (ORCHESTRATOR_CORE.md).
 """
 import os
 import re
 import yaml
-from typing import Dict, Any, Tuple, Optional, List
+from typing import Dict, Any, Tuple, Optional
 
 def load_policy_from_core(core_path: str) -> Dict[str, Any]:
     if not os.path.exists(core_path):
@@ -45,6 +45,23 @@ class PolicyValidator:
         ep_id = binding.get("required_boss_endpoint")
         if ep_id not in self.endpoints:
             return False, f"BOSS_BINDING_UNAVAILABLE: Endpoint {ep_id} not in registry", None
+        
+        ep = self.endpoints[ep_id]
+        expected_model = ep.get("model")
+        req_model = binding.get("model")
+        if req_model and expected_model and req_model != expected_model:
+            return False, f"BOSS_BINDING_UNAVAILABLE: Model mismatch for {ep_id} ({req_model} != {expected_model})", None
+        
+        req_effort = binding.get("effort")
+        if req_effort and req_effort not in ep.get("accepted_efforts", []):
+            return False, f"BOSS_BINDING_UNAVAILABLE: Effort {req_effort} not in accepted_efforts {ep.get('accepted_efforts')}", None
+        
+        policy_max = ep.get("policy_max_effort")
+        if policy_max and req_effort:
+            eff_levels = {"low": 1, "medium": 2, "high": 3, "max": 4}
+            if eff_levels.get(req_effort, 0) > eff_levels.get(policy_max, 0):
+                return False, f"BOSS_BINDING_UNAVAILABLE: Effort {req_effort} exceeds policy cap {policy_max}", None
+
         return True, None, binding
 
     def validate_role_not_controller_self_promotion(self, agent_type: str, requested_role: str) -> Tuple[bool, Optional[str]]:
@@ -71,11 +88,49 @@ class PolicyValidator:
                 return False, f"REJECT_EFFORT_EXCEEDS_POLICY: {effort} > {policy_max}"
         return True, None
 
-    def validate_controller_execution_binding(self, requested_ep: str, requested_effort: str, executed_ep: str, executed_effort: str) -> Tuple[bool, Optional[str]]:
-        if requested_ep != executed_ep:
+    def validate_controller_execution_binding(
+        self,
+        requested_ep: str,
+        requested_model: str,
+        requested_effort: str,
+        executed_ep: str,
+        actual_model: str,
+        executed_effort: str
+    ) -> Tuple[bool, Optional[str]]:
+        # 1. Requested endpoint exists
+        if requested_ep not in self.endpoints:
+            return False, f"REJECT_UNKNOWN_ENDPOINT: {requested_ep}"
+        
+        ep = self.endpoints[requested_ep]
+        canonical_model = ep.get("model")
+
+        # 2. Requested model == canonical model
+        if canonical_model and requested_model != canonical_model:
+            return False, f"REJECT_REQUESTED_MODEL_MISMATCH: Requested model '{requested_model}' does not match canonical '{canonical_model}' for {requested_ep}"
+
+        # 3. Executed endpoint == requested endpoint
+        if executed_ep != requested_ep:
             return False, f"REJECT_CONTROLLER_SUBSTITUTION: Endpoint mismatch ({requested_ep} != {executed_ep})"
-        if requested_effort != executed_effort:
+
+        # 4. Actual executed model == canonical model for endpoint
+        if canonical_model and actual_model != canonical_model:
+            return False, f"REJECT_CONTROLLER_MODEL_SUBSTITUTION: Actual executed model '{actual_model}' does not match canonical '{canonical_model}' for {requested_ep}"
+
+        # 5. Executed effort == requested effort
+        if executed_effort != requested_effort:
             return False, f"REJECT_CONTROLLER_SUBSTITUTION: Effort mismatch ({requested_effort} != {executed_effort})"
+
+        # 6. Requested effort is accepted by endpoint
+        if requested_effort not in ep.get("accepted_efforts", []):
+            return False, f"REJECT_UNACCEPTED_EFFORT: {requested_effort} not in {ep.get('accepted_efforts')}"
+
+        # 7. Policy cap check
+        policy_max = ep.get("policy_max_effort")
+        if policy_max:
+            eff_levels = {"low": 1, "medium": 2, "high": 3, "max": 4}
+            if eff_levels.get(requested_effort, 0) > eff_levels.get(policy_max, 0):
+                return False, f"REJECT_EFFORT_EXCEEDS_POLICY: {requested_effort} > {policy_max}"
+
         return True, None
 
     def validate_verifier_independence(self, implementer_id: str, verifier_id: str) -> Tuple[bool, Optional[str]]:

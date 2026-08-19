@@ -66,18 +66,67 @@ class TestProductionPolicyValidator(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("REJECT_UNACCEPTED_EFFORT", err)
 
-    def test_controller_substitution_detection(self):
-        ok, err = self.validator.validate_controller_execution_binding("GEMINI_FLASH_HIGH", "high", "GEMINI_FLASH_HIGH", "high")
+    def test_controller_execution_binding_positive(self):
+        # A. Valid Gemini binding
+        ok, err = self.validator.validate_controller_execution_binding(
+            "GEMINI_FLASH_HIGH",
+            "nine-router/ag/gemini-3.7-flash-high",
+            "high",
+            "GEMINI_FLASH_HIGH",
+            "nine-router/ag/gemini-3.7-flash-high",
+            "high"
+        )
         self.assertTrue(ok)
         self.assertIsNone(err)
 
-        # Attack: Controller substituted PLUS_LUNA instead of GEMINI_FLASH_HIGH
-        ok, err = self.validator.validate_controller_execution_binding("GEMINI_FLASH_HIGH", "high", "PLUS_LUNA", "high")
+    def test_same_endpoint_wrong_requested_model_fails(self):
+        # B. Same endpoint ID, wrong requested model
+        ok, err = self.validator.validate_controller_execution_binding(
+            "GEMINI_FLASH_HIGH",
+            "gpt-5.6-luna",
+            "high",
+            "GEMINI_FLASH_HIGH",
+            "nine-router/ag/gemini-3.7-flash-high",
+            "high"
+        )
+        self.assertFalse(ok)
+        self.assertIn("REJECT_REQUESTED_MODEL_MISMATCH", err)
+
+    def test_same_endpoint_wrong_actual_model_fails(self):
+        # C. Same endpoint ID, correct requested model, WRONG actual model (Controller model substitution)
+        ok, err = self.validator.validate_controller_execution_binding(
+            "GEMINI_FLASH_HIGH",
+            "nine-router/ag/gemini-3.7-flash-high",
+            "high",
+            "GEMINI_FLASH_HIGH",
+            "gpt-5.6-luna",
+            "high"
+        )
+        self.assertFalse(ok)
+        self.assertIn("REJECT_CONTROLLER_MODEL_SUBSTITUTION", err)
+
+    def test_endpoint_and_effort_substitution_fails(self):
+        # D. Endpoint substitution
+        ok, err = self.validator.validate_controller_execution_binding(
+            "GEMINI_FLASH_HIGH",
+            "nine-router/ag/gemini-3.7-flash-high",
+            "high",
+            "PLUS_LUNA",
+            "gpt-5.6-luna",
+            "high"
+        )
         self.assertFalse(ok)
         self.assertIn("REJECT_CONTROLLER_SUBSTITUTION", err)
 
-        # Attack: Controller substituted low effort
-        ok, err = self.validator.validate_controller_execution_binding("PLUS_LUNA", "max", "PLUS_LUNA", "low")
+        # E. Effort substitution
+        ok, err = self.validator.validate_controller_execution_binding(
+            "PLUS_LUNA",
+            "gpt-5.6-luna",
+            "max",
+            "PLUS_LUNA",
+            "gpt-5.6-luna",
+            "low"
+        )
         self.assertFalse(ok)
         self.assertIn("REJECT_CONTROLLER_SUBSTITUTION", err)
 

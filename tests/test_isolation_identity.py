@@ -10,7 +10,7 @@ Validates:
   3. CHILD_EXECUTION_RESULT
   4. BOSS_FOLLOWUP_PACKET
   5. FINAL_BOSS_DECISION (including boss_child_id and FINAL_DECISION_CONTEXT_MISMATCH)
-- Trace identity completeness, fork_turns enforcement & multi-repository distinction
+- Trace identity completeness, fork_turns enforcement & inherited_parent_turns validation
 """
 
 import unittest
@@ -49,7 +49,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIsNone(err)
 
     def test_target_workspace_mismatch_fails_closed(self):
-        # Attack A: Requested workspace does not match git toplevel
         bad_identity = dict(self.valid_identity)
         bad_identity["git_toplevel"] = "/Users/amin/Documents/OtherProject"
         ok, err = validate_mission_identity(bad_identity)
@@ -77,7 +76,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIsNone(err)
 
-        # Mismatch test
         bad_pkt = dict(mission_pkt, mission_id="wrong-id")
         ok, err = validate_boss_mission_packet(bad_pkt, self.valid_identity)
         self.assertFalse(ok)
@@ -99,7 +97,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIsNone(err)
 
     def test_boss_action_fork_turns_missing_fails_closed(self):
-        # Invariant 8: fork_turns missing in SPAWN_CHILD
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
@@ -114,7 +111,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIn("FORK_TURNS_POLICY_VIOLATION", err)
 
     def test_boss_action_fork_turns_all_fails_closed(self):
-        # Invariant 8: fork_turns="all" in SPAWN_CHILD
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
@@ -130,7 +126,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIn("FORK_TURNS_POLICY_VIOLATION", err)
 
     def test_boss_action_wrong_mission_id_fails_closed(self):
-        # Attack B: Boss returns packet for foreign mission
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-foreign-999",
@@ -145,7 +140,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIn("MISSION_CONTEXT_MISMATCH", err)
 
     def test_boss_action_wrong_workspace_fails_closed(self):
-        # Attack C: Boss returns packet for foreign workspace
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
@@ -160,7 +154,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIn("MISSION_CONTEXT_MISMATCH", err)
 
     def test_boss_action_wrong_repository_fails_closed(self):
-        # Attack D: Boss returns packet for foreign repo
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
@@ -193,7 +186,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertIn("MISSION_CONTEXT_MISMATCH", err)
 
     def test_boss_followup_foreign_boss_child_fails_closed(self):
-        # Attack E: Followup targets a Boss from another mission
         followup_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
@@ -220,7 +212,6 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIsNone(err)
 
-        # Mismatches
         bad_dec = dict(decision_pkt, mission_id="foreign-mission")
         ok, err = validate_final_boss_decision(bad_dec, self.valid_identity)
         self.assertFalse(ok)
@@ -299,11 +290,11 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
                     "action_id": "act-1",
                     "controller_executed": {
                         "child_id": "scout-1"
-                        # fork_turns missing
                     },
                     "context_isolation": {
                         "packet_only": True,
-                        "requested_fork_turns": "none"
+                        "requested_fork_turns": "none",
+                        "inherited_parent_turns": "UNPROVEN"
                     }
                 }
             ]
@@ -311,6 +302,39 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         ok, err = validate_trace_identity_completeness(bad_trace)
         self.assertFalse(ok)
         self.assertIn("fork_turns", err)
+
+    def test_trace_missing_inherited_parent_turns_fails(self):
+        bad_trace = {
+            "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
+            "workspace": {
+                "requested_workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
+                "branch_at_start": "develop",
+                "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
+                "identity_match": True
+            },
+            "boss": {
+                "requested_fork_turns": "none"
+            },
+            "actions": [
+                {
+                    "action_id": "act-1",
+                    "controller_executed": {
+                        "child_id": "scout-1",
+                        "fork_turns": "none"
+                    },
+                    "context_isolation": {
+                        "packet_only": True,
+                        "requested_fork_turns": "none"
+                        # inherited_parent_turns missing
+                    }
+                }
+            ]
+        }
+        ok, err = validate_trace_identity_completeness(bad_trace)
+        self.assertFalse(ok)
+        self.assertIn("inherited_parent_turns", err)
 
 if __name__ == "__main__":
     unittest.main()

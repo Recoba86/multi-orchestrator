@@ -165,5 +165,11 @@ def validate_trace_identity_completeness(trace_data: Dict[str, Any]) -> Tuple[bo
             return False, f"Trace records packet_only != true in action [{idx+1}]"
         if ctx_iso.get("requested_fork_turns") != "none":
             return False, f"Trace records requested_fork_turns != none in context_isolation action [{idx+1}]"
+        
+        inherited = ctx_iso.get("inherited_parent_turns")
+        if inherited is None:
+            return False, f"Missing inherited_parent_turns in context_isolation action [{idx+1}]"
+        if inherited not in [False, "UNPROVEN"]:
+            return False, f"Invalid inherited_parent_turns value '{inherited}' in action [{idx+1}]"
     
     return True, None
