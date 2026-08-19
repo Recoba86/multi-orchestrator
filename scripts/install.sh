@@ -115,7 +115,7 @@ for src, dest in files_to_install:
         # Invariant: preserve original pre-install backup reference
         backup_path = original_backup
 
-        if current_dest_sha != prev_installed_sha:
+        if dest_exists and current_dest_sha != prev_installed_sha:
             # User modified the installed file! Preserve user modification safely
             user_backup = f"{dest}.user-modified-backup.{int(time.time())}"
             if not dry_run:
