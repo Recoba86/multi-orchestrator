@@ -6,7 +6,7 @@ Validates:
 - Preflight workspace match & mismatch fail-closed
 - All 5 packet validators:
   1. BOSS_MISSION_PACKET
-  2. BOSS_ACTION_PACKET
+  2. BOSS_ACTION_PACKET (including FORK_TURNS_NONE_REQUIRED)
   3. CHILD_EXECUTION_RESULT
   4. BOSS_FOLLOWUP_PACKET
   5. FINAL_BOSS_DECISION
@@ -91,11 +91,43 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
-            "logical_task_id": "scout-identity"
+            "logical_task_id": "scout-identity",
+            "fork_turns": "none"
         }
         ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
         self.assertTrue(ok)
         self.assertIsNone(err)
+
+    def test_boss_action_fork_turns_missing_fails_closed(self):
+        # Invariant 8: fork_turns missing in SPAWN_CHILD
+        action_pkt = {
+            "packet_version": 1,
+            "mission_id": "mission-test-100",
+            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
+            "action_id": "act-1",
+            "action": "SPAWN_CHILD",
+            "logical_task_id": "scout-identity"
+        }
+        ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FORK_TURNS_POLICY_VIOLATION", err)
+
+    def test_boss_action_fork_turns_all_fails_closed(self):
+        # Invariant 8: fork_turns="all" in SPAWN_CHILD
+        action_pkt = {
+            "packet_version": 1,
+            "mission_id": "mission-test-100",
+            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
+            "action_id": "act-1",
+            "action": "SPAWN_CHILD",
+            "logical_task_id": "scout-identity",
+            "fork_turns": "all"
+        }
+        ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
+        self.assertFalse(ok)
+        self.assertIn("FORK_TURNS_POLICY_VIOLATION", err)
 
     def test_boss_action_wrong_mission_id_fails_closed(self):
         # Attack B: Boss returns packet for foreign mission
@@ -105,7 +137,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
-            "action": "SPAWN_CHILD"
+            "action": "SPAWN_CHILD",
+            "fork_turns": "none"
         }
         ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
         self.assertFalse(ok)
@@ -119,7 +152,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "workspace_root": "/Users/amin/Documents/OtherProject",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
-            "action": "SPAWN_CHILD"
+            "action": "SPAWN_CHILD",
+            "fork_turns": "none"
         }
         ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
         self.assertFalse(ok)
@@ -133,7 +167,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
             "repository_identity": "https://github.com/OtherOrg/other-repo.git",
             "action_id": "act-1",
-            "action": "SPAWN_CHILD"
+            "action": "SPAWN_CHILD",
+            "fork_turns": "none"
         }
         ok, err = validate_boss_action_packet(action_pkt, self.valid_identity)
         self.assertFalse(ok)

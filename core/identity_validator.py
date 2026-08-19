@@ -62,6 +62,14 @@ def validate_boss_action_packet(packet: Dict[str, Any], mission_identity: Dict[s
     if action not in ["SPAWN_CHILD", "MISSION_COMPLETE", "MISSION_BLOCKED", "REWORK_REQUIRED"]:
         return False, f"Invalid action in BOSS_ACTION_PACKET: {action}"
     
+    # FORK_TURNS_NONE_REQUIRED invariant
+    if action == "SPAWN_CHILD":
+        fork_turns = packet.get("fork_turns")
+        if fork_turns is None:
+            return False, "FORK_TURNS_POLICY_VIOLATION: fork_turns field is missing in BOSS_ACTION_PACKET"
+        if fork_turns != "none":
+            return False, f"FORK_TURNS_POLICY_VIOLATION: invalid fork_turns value '{fork_turns}', must be 'none'"
+    
     return True, None
 
 def validate_child_execution_result(result: Dict[str, Any], mission_identity: Dict[str, Any]) -> Tuple[bool, Optional[str]]:

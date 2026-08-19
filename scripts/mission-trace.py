@@ -71,7 +71,8 @@ def render_human_readable(trace_data):
         lines.append(f"  [{idx+1}] Action ID: {act.get('action_id', f'act-{idx+1}')} | Role: {act.get('role')} | Task: {act.get('logical_task_id')}{ident_str}")
         lines.append(f"      Intended:         {req.get('endpoint')} ({req.get('model')}/{req.get('effort')})")
         lines.append(f"      Validation:       {val.get('result')}{val_reason}")
-        lines.append(f"      Executed Binding: {exe.get('actual_model')} (type: {exe.get('agent_type')}, effort: {exe.get('actual_effort')})")
+        fork_mode = exe.get('fork_turns', 'UNPROVEN')
+        lines.append(f"      Executed Binding: {exe.get('actual_model')} (type: {exe.get('agent_type')}, effort: {exe.get('actual_effort')}, fork_turns: {fork_mode})")
         lines.append(f"      Binding Match:    {act.get('binding_match')}")
         lines.append(f"      Result Status:    {res.get('status')} (mutation: {res.get('mutation_state')})")
         if res.get("errors"):

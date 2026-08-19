@@ -27,6 +27,7 @@ MISSION_IDENTITY:
 5. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_ACTION`:** Every `BOSS_ACTION_PACKET` emitted by the Boss MUST match the `mission_id`, `workspace_root`, and `repository_identity` of the active `MISSION_IDENTITY`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
 6. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_FOLLOWUP`:** Every `BOSS_FOLLOWUP_PACKET` delivered to the Boss MUST match `mission_id`, `workspace_root`, `repository_identity`, and `boss_child_id`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
 7. **`MISSION_CONTEXT_MISMATCH_FAIL_CLOSED`:** Any context mismatch in mission ID, workspace root, repository identity, or Boss child ID blocks all execution immediately (no worker spawn, no provider fallback, no Controller takeover).
+8. **`FORK_TURNS_NONE_REQUIRED`:** Every orchestrated child spawn (`DEDICATED_BOSS`, `SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST explicitly specify `fork_turns="none"`. Omitting `fork_turns`, setting `fork_turns="all"`, or any value other than `"none"` is strictly invalid and fails closed as `FORK_TURNS_POLICY_VIOLATION`.
 
 
 ---
