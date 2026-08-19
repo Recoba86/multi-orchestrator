@@ -1,6 +1,6 @@
 ---
 name: grok-orchestrator-v2
-description: Plan complex software tasks in a Grok 4.6 High parent thread and delegate bounded workstreams using the shared orchestration core (Phase 4B Architecture).
+description: Plan complex software tasks using a dedicated Grok 4.6 High Boss and delegate bounded workstreams using the shared orchestration core (RC3 Architecture).
 ---
 
 # Grok Orchestrator V2 (Grok Boss Wrapper)
@@ -32,10 +32,10 @@ If `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` cannot be read or is una
 
 ---
 
-## 2. Orchestration Protocol
+## 2. Orchestration Protocol & Workspace Preflight
 
-1. **Spawn Dedicated Boss:** Deliver initial `BOSS_MISSION_PACKET` with `fork_turns="none"`.
-2. **Receive `BOSS_ACTION_PACKET`:** Dedicated Boss issues next action (`SPAWN_CHILD`, `MISSION_COMPLETE`, `MISSION_BLOCKED`, `REWORK_REQUIRED`).
-3. **Validate & Execute:** Controller validates requested endpoint/model/effort against Core policy. Spawns child subagent with `fork_turns="none"`.
-4. **Lossless Relay:** Controller captures `CHILD_EXECUTION_RESULT`, records trace entry, and delivers `BOSS_FOLLOWUP_PACKET` to the SAME dedicated Grok Boss.
+1. **Workspace Preflight:** Controller executes preflight checks (`pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git rev-parse HEAD`, `git remote get-url origin`). If `workspace_root != git_toplevel`, abort with `TARGET_WORKSPACE_MISMATCH`.
+2. **Spawn Dedicated Boss:** Generate fresh `mission_id`, build `MISSION_IDENTITY`, and spawn a fresh dedicated Grok Boss delivering `BOSS_MISSION_PACKET` with `fork_turns="none"`.
+3. **Receive `BOSS_ACTION_PACKET`:** Validate `mission_id`, `workspace_root`, and `repository_identity` match `MISSION_IDENTITY`. Validate requested endpoint/model/effort against Core policy. On mismatch, abort with `MISSION_CONTEXT_MISMATCH`. Spawns child subagent with `fork_turns="none"`.
+4. **Lossless Relay:** Controller captures `CHILD_EXECUTION_RESULT`, records trace entry, validates `boss_child_id` matches current mission Boss, and delivers `BOSS_FOLLOWUP_PACKET` to the SAME dedicated Grok Boss.
 5. **Final Decision:** Grok Boss issues `FINAL_BOSS_DECISION`. Controller finalizes Mission Trace and delivers factual summary to user.

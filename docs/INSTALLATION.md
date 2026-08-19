@@ -47,7 +47,7 @@ Validate that all files and safety invariants are correctly installed:
 
 ## 4. Usage in Codex CLI
 
-### Sol Boss (Default)
+### Sol Orchestrator Skill (Default)
 ```bash
 codex --profile sol-luna
 ```
@@ -56,7 +56,7 @@ Prompt:
 Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role subagents.
 ```
 
-### Grok Boss (Alternative)
+### Grok Orchestrator Skill (Alternative)
 ```bash
 codex --profile grok-v2
 ```

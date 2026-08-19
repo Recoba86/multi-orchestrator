@@ -31,6 +31,7 @@ def sanitize_trace_data(data):
 
 def render_human_readable(trace_data):
     mission = trace_data.get("mission", {})
+    workspace = trace_data.get("workspace", {})
     controller = trace_data.get("controller", {})
     boss = trace_data.get("boss", {})
     actions = trace_data.get("actions", [])
@@ -45,6 +46,10 @@ def render_human_readable(trace_data):
     lines.append(f"Skill:               {mission.get('skill', 'UNKNOWN')}")
     lines.append(f"Status:              {mission.get('status', 'UNKNOWN')}")
     lines.append(f"Started At:          {mission.get('started_at', 'UNKNOWN')}")
+    if workspace:
+        lines.append(f"Workspace Root:      {workspace.get('requested_workspace_root', 'UNKNOWN')}")
+        lines.append(f"Git Toplevel:        {workspace.get('actual_git_toplevel', 'UNKNOWN')} (match: {workspace.get('identity_match', False)})")
+        lines.append(f"Repository:          {workspace.get('repository_identity', 'UNKNOWN')} ({workspace.get('branch_at_start', 'UNKNOWN')}@{workspace.get('starting_sha', 'UNKNOWN')[:8] if workspace.get('starting_sha') else 'UNKNOWN'})")
     lines.append(f"Controller:          {controller.get('actual_session_model', 'UNKNOWN')} ({controller.get('role', 'ROOT_CONTROLLER')})")
     lines.append(f"Dedicated Boss:      {boss.get('actual_model', 'UNKNOWN')} (type: {boss.get('actual_agent_type', 'default')})")
     lines.append(f"Boss Requested:      {boss.get('requested_model', 'UNKNOWN')} / {boss.get('requested_effort', 'UNKNOWN')}")
@@ -61,7 +66,9 @@ def render_human_readable(trace_data):
         exe = act.get("controller_executed", {})
         res = act.get("result", {})
         val_reason = f" ({val.get('reason')})" if val.get('reason') else ""
-        lines.append(f"  [{idx+1}] Action ID: {act.get('action_id', f'act-{idx+1}')} | Role: {act.get('role')} | Task: {act.get('logical_task_id')}")
+        ident_val = act.get("identity_validation", {})
+        ident_str = f" | Identity: {ident_val.get('result', 'N/A')}" if ident_val else ""
+        lines.append(f"  [{idx+1}] Action ID: {act.get('action_id', f'act-{idx+1}')} | Role: {act.get('role')} | Task: {act.get('logical_task_id')}{ident_str}")
         lines.append(f"      Intended:         {req.get('endpoint')} ({req.get('model')}/{req.get('effort')})")
         lines.append(f"      Validation:       {val.get('result')}{val_reason}")
         lines.append(f"      Executed Binding: {exe.get('actual_model')} (type: {exe.get('agent_type')}, effort: {exe.get('actual_effort')})")

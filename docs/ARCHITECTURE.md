@@ -26,7 +26,7 @@ Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
    ▼         ▼         ▼                      ▼                       ▼
  Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
 (Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
-(gemini)   (luna)    (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+(gemini)   (gemini)    (dseek)     (!implementer)    (Opus)         (Sol / Grok)
    │         │         │              │               │               ▲
    └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
              │ (Structured Factual Execution Results)

@@ -4,6 +4,33 @@ This document defines the normative, engine-agnostic orchestration policy, skill
 
 ---
 
+## 0. Canonical Mission Identity & Isolation Invariants
+
+Every orchestration mission is strictly bound to an immutable `MISSION_IDENTITY`:
+```yaml
+MISSION_IDENTITY:
+  mission_id: string                      # Unique identifier per Skill invocation (e.g. mission-1787106000)
+  skill: string                           # Name of invoked skill (sol-luna-orchestrator-v2 | grok-orchestrator-v2)
+  workspace_root: string                  # Canonical requested absolute workspace directory
+  git_toplevel: string                    # Output of `git rev-parse --show-toplevel`
+  repository_identity: string             # Remote repository URL or stable local repo name
+  starting_branch: string                 # Starting branch (e.g. develop, main)
+  starting_sha: string                    # Starting commit SHA
+  boss_child_id: string                   # Dedicated Boss agent task_name bound exclusively to this mission
+```
+
+### Core Isolation Invariants:
+1. **`NEW_MISSION_REQUIRES_FRESH_MISSION_ID`:** Every new invocation of an orchestrator Skill MUST generate a fresh, globally unique `mission_id`.
+2. **`NEW_MISSION_REQUIRES_FRESH_DEDICATED_BOSS`:** Every new mission MUST spawn a fresh Dedicated Boss child agent.
+3. **`BOSS_REUSE_ACROSS_DISTINCT_MISSIONS_FORBIDDEN`:** A Boss child instance created for mission A MUST NOT be reused, referenced, or sent follow-up tasks in mission B.
+4. **`TARGET_WORKSPACE_BINDING_REQUIRED`:** The Controller MUST verify workspace preflight (`pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git rev-parse HEAD`, `git remote get-url origin`). If `workspace_root != git_toplevel`, the mission fails closed with `TARGET_WORKSPACE_MISMATCH`.
+5. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_ACTION`:** Every `BOSS_ACTION_PACKET` emitted by the Boss MUST match the `mission_id`, `workspace_root`, and `repository_identity` of the active `MISSION_IDENTITY`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
+6. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_FOLLOWUP`:** Every `BOSS_FOLLOWUP_PACKET` delivered to the Boss MUST match `mission_id`, `workspace_root`, `repository_identity`, and `boss_child_id`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
+7. **`MISSION_CONTEXT_MISMATCH_FAIL_CLOSED`:** Any context mismatch in mission ID, workspace root, repository identity, or Boss child ID blocks all execution immediately (no worker spawn, no provider fallback, no Controller takeover).
+
+
+---
+
 ## 1. System Topology & Delegation Invariants
 
 ### A. Strict Hub-and-Spoke Invariant (`TOPOLOGY_HUB_AND_SPOKE_ONLY`)
@@ -252,9 +279,13 @@ Packets MUST NOT require or transport private hidden reasoning or raw chain-of-t
 BOSS_MISSION_PACKET:
   packet_version: 1                       # Integer schema version
   mission_id: string                      # Unique mission identifier (e.g. mission-1787106000)
-  user_goal: string                       # Original verbatim user objective
   skill_invoked: string                   # Name of skill invoked (e.g. grok-orchestrator-v2)
   workspace_root: string                  # Canonical absolute workspace root path
+  git_toplevel: string                    # Actual git rev-parse --show-toplevel
+  repository_identity: string             # Normalized repository remote or name
+  starting_branch: string                 # Current branch
+  starting_sha: string                    # Current commit HEAD SHA
+  user_goal: string                       # Original verbatim user objective
   environment_summary: string             # Factual environment facts (OS, tools available)
   constraints: [string]                   # Global mission constraints
 ```
@@ -264,6 +295,8 @@ BOSS_MISSION_PACKET:
 BOSS_ACTION_PACKET:
   packet_version: 1                       # Integer schema version
   mission_id: string                      # Retained mission identifier
+  workspace_root: string                  # Retained workspace root
+  repository_identity: string             # Retained repository identity
   action_id: string                       # Unique action ID (e.g. act-1)
   action: string                          # SPAWN_CHILD | MISSION_COMPLETE | MISSION_BLOCKED | REWORK_REQUIRED
   logical_task_id: string                 # Logical task ID within mission
@@ -284,6 +317,8 @@ BOSS_ACTION_PACKET:
 CHILD_EXECUTION_RESULT:
   packet_version: 1                       # Integer schema version
   mission_id: string                      # Retained mission identifier
+  workspace_root: string                  # Retained workspace root
+  repository_identity: string             # Retained repository identity
   action_id: string                       # Matches BOSS_ACTION_PACKET action_id
   logical_task_id: string                 # Matches logical_task_id
   child_id: string                        # Actual child agent task_name / ID
@@ -303,6 +338,9 @@ CHILD_EXECUTION_RESULT:
 BOSS_FOLLOWUP_PACKET:
   packet_version: 1                       # Integer schema version
   mission_id: string                      # Retained mission identifier
+  workspace_root: string                  # Retained workspace root
+  repository_identity: string             # Retained repository identity
+  boss_child_id: string                   # Retained Boss child ID
   child_result: object                    # Lossless CHILD_EXECUTION_RESULT
   controller_status: string               # READY_FOR_NEXT_ACTION | REJECTION
   rejection_reason: string                # Populated only if Boss action was rejected by Controller
@@ -313,6 +351,8 @@ BOSS_FOLLOWUP_PACKET:
 FINAL_BOSS_DECISION:
   packet_version: 1                       # Integer schema version
   mission_id: string                      # Retained mission identifier
+  workspace_root: string                  # Retained workspace root
+  repository_identity: string             # Retained repository identity
   decision: string                        # COMPLETE | INCOMPLETE | BLOCKED | REWORK_REQUIRED
   summary: string                         # Factual mission summary
   completed_tasks: [string]               # List of verified logical task IDs
@@ -512,6 +552,14 @@ mission:
   skill: string                           # grok-orchestrator-v2 | sol-luna-orchestrator-v2
   status: string                          # IN_PROGRESS | COMPLETE | INCOMPLETE | BLOCKED
 
+workspace:
+  requested_workspace_root: string        # Requested workspace path
+  actual_git_toplevel: string             # `git rev-parse --show-toplevel`
+  repository_identity: string             # Remote URL or repo name
+  branch_at_start: string                 # Current branch
+  starting_sha: string                    # Current HEAD commit SHA
+  identity_match: boolean                 # true if requested_workspace_root == actual_git_toplevel
+
 controller:
   actual_session_model: string            # Observable session model (or UNPROVEN)
   role: "ROOT_CONTROLLER"
@@ -529,10 +577,15 @@ boss:
 
 actions:
   - action_id: string
+    mission_id: string
+    workspace_root: string
+    repository_identity: string
+    boss_child_id: string
     logical_task_id: string
     role: string
     boss_requested: { endpoint: string, model: string, effort: string }
     controller_validation: { result: string, reason: string } # VALID | REJECTED
+    identity_validation: { mission_match: boolean, workspace_match: boolean, repository_match: boolean, boss_match: boolean, result: string } # VALID | REJECTED
     controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string }
     binding_match: boolean
     result: { status: string, mutation_state: string, errors: [string] }

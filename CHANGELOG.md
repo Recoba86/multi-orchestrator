@@ -5,6 +5,19 @@ All notable changes to the Orchestrator project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-19
+
+### Added
+- **Canonical Mission Identity (`MISSION_IDENTITY`):** Immutable bindings for `mission_id`, `workspace_root`, `git_toplevel`, `repository_identity`, `starting_branch`, `starting_sha`, and `boss_child_id`.
+- **Workspace Preflight & Fail-Closed Invariants:** Controller preflight protocol verifying `workspace_root == git_toplevel` (`TARGET_WORKSPACE_MISMATCH`) and strict packet identity matching (`MISSION_CONTEXT_MISMATCH`).
+- **Executable Pure Identity Validator:** Shipped `core/identity_validator.py` with comprehensive unit and negative test suite in `tests/test_isolation_identity.py`.
+- **Mission Trace V2 Workspace Identity:** Extended trace schema and CLI renderer to durably record repository identity, git toplevel match, and per-action identity validation status.
+
+### Changed
+- **Skill Metadata Cleanup:** Removed stale leaf-routing instructions from `sol-luna-orchestrator-v2/agents/openai.yaml` and corrected SKILL frontmatter descriptions to reflect Dedicated Boss architecture rather than parent-session constraints.
+- **Documentation Alignment:** Updated `README.md`, `docs/ARCHITECTURE.md`, and `docs/INSTALLATION.md` to ensure complete consistency with RC3 Dedicated Boss topologies.
+- **Gitignore Restoration:** Restored standard OS, temporary, backup, and editor ignore patterns in `.gitignore`.
+
 ## [1.2.0] - 2026-08-19
 
 ### Added

@@ -20,25 +20,35 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
 ## Architecture at a Glance
 
 ```text
-               User / Developer
-                      │
-                      ▼
-                 Parent Boss
-         (Sol High / Grok 4.6 High)
-                      │
-   ┌──────────────────┼──────────────────┬──────────────────┐
-   ▼                  ▼                  ▼                  ▼
- Scout         Standard Worker      Deep Worker    Independent Verifier
-(Read-Only)      (Write-Owned)      (Max-Depth)     (!= Implementer)
-(Gemini Flash)   (Gemini Flash)    (DeepSeek Pro)     (Deterministic)
-   │                  │                  │                  │
-   └──────────────────┼──────────────────┴──────────────────┘
-                      │ (Structured Artifacts & Reports)
-                      ▼
-                 Parent Boss
-                      │
-                      ▼
-               User / Developer
+      User / Developer
+             │
+             ▼
+       ROOT_CONTROLLER
+ (Session Model / Control Plane)
+             │
+             ▼ (spawns & relays)
+      DEDICATED_BOSS
+  (Skill-Bound: Sol High / Grok High)
+             │ (decisions / actions)
+             ▼
+       ROOT_CONTROLLER
+             │ (validated execution)
+   ┌─────────┼─────────┬──────────────────────┬───────────────────────┐
+   ▼         ▼         ▼                      ▼                       ▼
+ Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
+(Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
+(gemini)  (gemini)   (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+   │         │         │              │               │               ▲
+   └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
+             │ (Structured Factual Execution Results)
+             ▼
+       ROOT_CONTROLLER
+             │ (lossless relay via follow-up)
+             │
+             └────────────────────────────────────────────────────────┘
+             │
+             ▼
+      User / Developer
 ```
 
 ---
