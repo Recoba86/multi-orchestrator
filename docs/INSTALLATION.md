@@ -73,3 +73,10 @@ To cleanly remove installed orchestrator components without affecting custom con
 ```bash
 ./scripts/uninstall.sh
 ```
+
+---
+
+## 6. Source Workspace vs. Active Runtime
+- `multi-orchestrator/stable` and `multi-orchestrator/dev` are Git source directories.
+- `scripts/install.sh` copies and configures runtime files into `~/.agents` and `~/.codex`.
+- Routine development changes are implemented in `dev/` and must be tested and promoted to `stable/` before running the installer.

@@ -77,6 +77,22 @@ Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role s
 
 ---
 
+
+---
+
+## Development & Governance
+
+For this private repository, work is organized into two permanent Git worktrees:
+- **`stable/` (`main`):** Known-good, audited release baseline. Direct development is prohibited.
+- **`dev/` (`develop`):** Normal development workspace where all new features, bug fixes, and refactors begin.
+
+For detailed developer and agent instructions, see:
+- [Agent Instructions & Preflight Guardrails](AGENTS.md)
+- [Development Workflow Guide](docs/DEVELOPMENT_WORKFLOW.md)
+- [Promotion & Release Process](docs/RELEASE_PROCESS.md)
+- [Self-Development Safety Guide](docs/SELF_DEVELOPMENT.md)
+- [Current Project State](docs/PROJECT_STATE.md)
+
 ## License & Security
 
 - **Security:** Please see [SECURITY.md](SECURITY.md) for vulnerability reporting.

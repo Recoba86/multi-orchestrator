@@ -55,3 +55,9 @@ The architecture strictly operates as a centralized **Hub-and-Spoke** topology:
   - `VERIFICATION_PACKET`: 13 mandatory fields guaranteeing independent verification criteria without implementer reasoning bias.
   - `prior_attempt_summary`: 10 mandatory fields driving structured rework cycles.
 - **Zero Chain-of-Thought Leakage:** Packets communicate strictly through factual decisions, citations, and error logs—never private reasoning traces.
+
+---
+
+## 5. Development Workspace Topology vs. Runtime
+- **Source Control Topology:** Managed as two Git worktrees: `stable/` (`main`) for audited baselines and `dev/` (`develop`) for all active development.
+- **Runtime Environment:** Deployed separately into `~/.agents` and `~/.codex` via `scripts/install.sh`. Development work never targets the active runtime directly.
