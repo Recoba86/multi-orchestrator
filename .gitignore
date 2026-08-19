@@ -1,13 +1,7 @@
-# Operating System Files
 .DS_Store
-Thumbs.db
-._*
-
-# Backups and temporary files
-*.backup.*
+__pycache__/
+*.pyc
 *.tmp
-*.log
-*.swp
-
-# Local test runs
-/tmp/
+*.tmp.*
+*.user-modified-backup.*
+*.pre-orchestrator-backup.*

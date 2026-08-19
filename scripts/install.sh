@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Multi Orchestrator Installer
-# Installs Shared Core, Skills, Agent Definitions, and Configuration Examples with safe backup tracking.
+# Installs Shared Core, Skills, Agent Definitions, Helpers, and Configuration Examples with safe backup tracking.
 
 DRY_RUN=0
 TARGET_HOME="${HOME}"
@@ -85,6 +85,7 @@ files_to_install = [
     (os.path.join(repo_root, "skills/grok-orchestrator-v2/SKILL.md"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/SKILL.md")),
     (os.path.join(repo_root, "skills/grok-orchestrator-v2/USAGE.md"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/USAGE.md")),
     (os.path.join(repo_root, "skills/grok-orchestrator-v2/agents/openai.yaml"), os.path.join(target_home, ".agents/skills/grok-orchestrator-v2/agents/openai.yaml")),
+    (os.path.join(repo_root, "scripts/mission-trace.py"), os.path.join(target_home, ".agents/bin/mission-trace")),
 ]
 
 agents_dir = os.path.join(repo_root, "agents")
@@ -138,6 +139,8 @@ for src, dest in files_to_install:
     else:
         os.makedirs(dest_dir, exist_ok=True)
         shutil.copy2(src, dest)
+        if dest.endswith("/mission-trace"):
+            os.chmod(dest, 0o755)
         print(f"Installed: {dest}")
 
     new_manifest_installed_files[dest] = {

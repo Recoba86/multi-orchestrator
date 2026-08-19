@@ -1,56 +1,22 @@
-# Multi Orchestrator — Model Registry & Routing Policy
+# Models and Provider Registry (RC3)
 
-## 1. Provider-Qualified Endpoint Registry
+## Endpoint Registry
 
-| Endpoint ID | Capacity Domain | Transport Domain | Model | Accepted Efforts | Effective Effort Status | Notes |
-|---|---|---|---|---|---|---|
-| `PLUS_LUNA` | `openai_plus_capacity` | `openai_native` | `gpt-5.6-luna` | `[low, medium, high, max]` | `PROVEN` | Standard Worker Fallback / Verifier |
-| `GEMINI_FLASH_HIGH` | `google_ag_capacity` | `nine_router_transport` | `nine-router/ag/gemini-3.7-flash-high` | `[low, high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Standard Worker Primary, Scout Primary & Verifier |
-| `DEEPSEEK_FLASH` | `opencode_go_capacity` | `nine_router_transport` | `opencode-go/deepseek-v4-flash` | `[low, high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Scout / Worker Fallback |
-| `DEEPSEEK_PRO` | `opencode_go_capacity` | `nine_router_transport` | `opencode-go/deepseek-v4-pro` | `[high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Deep Worker Primary & Verifier |
-| `OCG_LUNA` | `opencode_go_capacity` | `opencode_go_responses` | `opencode-go-responses/gpt-5.6-luna` | `[high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Registry Fallback |
-| `OPUS_4_6_THINKING` | `claude_opus_ag_capacity` | `nine_router_transport` | `nine-router/ag/claude-opus-4-6-thinking` | `[low, high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Premium Reviewer (Read-Only) |
-| `GROK_4_6_HIGH` | `xai_gcli_capacity` | `nine_router_transport` | `nine-router/gcli/grok-4.6-high` | `[high, max]` | `ACCEPTED_BUT_EFFECTIVE_UNKNOWN` | Grok Boss Profile |
+| Endpoint ID | Canonical Model String | Capacity Domain | Accepted Efforts | Policy Max |
+|---|---|---|---|---|
+| `SOL_HIGH` | `gpt-5.6-sol` | `openai_plus_capacity` | `[low, medium, high, xhigh, max, ultra]` | `high` (normative boss) |
+| `GROK_4_6_HIGH` | `nine-router/gcli/grok-4.6-high` | `xai_gcli_capacity` | `[high, max]` | `high` (normative boss) |
+| `PLUS_LUNA` | `gpt-5.6-luna` | `openai_plus_capacity` | `[low, medium, high, max]` | `max` |
+| `GEMINI_FLASH_HIGH` | `nine-router/ag/gemini-3.7-flash-high` | `google_ag_capacity` | `[low, high, max]` | `high` |
+| `DEEPSEEK_FLASH` | `opencode-go/deepseek-v4-flash` | `opencode_go_capacity` | `[low, high, max]` | `high` |
+| `DEEPSEEK_PRO` | `opencode-go/deepseek-v4-pro` | `opencode_go_capacity` | `[high, max]` | `max` |
+| `OCG_LUNA` | `opencode-go-responses/gpt-5.6-luna` | `opencode_go_capacity` | `[high, max]` | `high` |
+| `OPUS_4_6_THINKING` | `nine-router/ag/claude-opus-4-6-thinking` | `claude_opus_ag_capacity` | `[low, high, max]` | `high` (Read-Only) |
 
----
+## Role Chains
 
-## 2. Canonical Option A Routing (Deterministic 3-Attempt Chains)
-
-### A. SCOUT (Read-Only Exploration)
-1. **Attempt 1:** `GEMINI_FLASH_HIGH` (effort: `high`)
-2. **Attempt 2:** `DEEPSEEK_FLASH` (effort: `high`)
-3. **Attempt 3:** `PLUS_LUNA` (effort: `medium`)
-
-### B. STANDARD_WORKER (Routine Implementation)
-1. **Attempt 1:** `GEMINI_FLASH_HIGH` (effort: `high`)
-2. **Attempt 2:** `PLUS_LUNA` (effort: `max`)
-3. **Attempt 3:** `DEEPSEEK_FLASH` (effort: `high`)
-
-### C. DEEP_WORKER (Complex / Algorithmic Depth)
-1. **Attempt 1:** `DEEPSEEK_PRO` (effort: `max`)
-2. **Attempt 2:** `PLUS_LUNA` (effort: `max`)
-3. **Attempt 3:** `GEMINI_FLASH_HIGH` (effort: `max`)
-
-### D. Authoritative Implementer-Aware Verifier Routing & Invariants
-- **Gemini Implementer (`GEMINI_FLASH_HIGH`):**
-  1. `PLUS_LUNA` (effort: `max`)
-  2. `OCG_LUNA` (effort: `high`)
-- **Plus Luna Implementer (`PLUS_LUNA`):**
-  1. `GEMINI_FLASH_HIGH` (effort: `high`)
-  2. `DEEPSEEK_PRO` (effort: `high`)
-- **OCG Luna Implementer (`OCG_LUNA`):**
-  1. `GEMINI_FLASH_HIGH` (effort: `high`)
-  2. `DEEPSEEK_PRO` (effort: `high`)
-- **DeepSeek Pro Implementer (`DEEPSEEK_PRO`):**
-  1. `GEMINI_FLASH_HIGH` (effort: `high`)
-  2. `PLUS_LUNA` (effort: `max`)
-  3. `OCG_LUNA` (effort: `high`)
-- **DeepSeek Flash Implementer (`DEEPSEEK_FLASH`):**
-  1. `GEMINI_FLASH_HIGH` (effort: `high`)
-  2. `PLUS_LUNA` (effort: `max`)
-  3. `OCG_LUNA` (effort: `high`)
-
-#### Invariants:
-- **Implementer != Verifier:** Exact implementer self-verification is strictly prohibited.
-- **Luna Model Family Conflict:** `PLUS_LUNA` and `OCG_LUNA` belong to the same underlying model family (`gpt-5.6-luna`) and cannot verify each other's work.
-- **Exhaustion:** If all independent verifiers are unavailable or conflicted, the task enters `VERIFIER_CHAIN_EXHAUSTED` and remains `INCOMPLETE`.
+- **SCOUT:** `GEMINI_FLASH_HIGH` (high) → `DEEPSEEK_FLASH` (high) → `PLUS_LUNA` (medium)
+- **STANDARD_WORKER:** `GEMINI_FLASH_HIGH` (high) → `PLUS_LUNA` (max) → `DEEPSEEK_FLASH` (high)
+- **DEEP_WORKER:** `DEEPSEEK_PRO` (max) → `PLUS_LUNA` (max) → `GEMINI_FLASH_HIGH` (max)
+- **VERIFIER:** Implementer-aware selection enforcing `verifier != implementer` and model family independence (`PLUS_LUNA` ↔ `OCG_LUNA` conflict).
+- **PREMIUM_SECOND_OPINION:** `OPUS_4_6_THINKING` (Strictly Read-Only).

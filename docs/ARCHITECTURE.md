@@ -1,63 +1,50 @@
-# Multi Orchestrator — Architecture Specification
+# Multi Orchestrator Architecture (RC3 — Dedicated Boss)
 
-## 1. Overview
-Multi Orchestrator is an engine-agnostic multi-agent orchestration architecture designed for local execution runtimes (such as OpenAI Codex CLI). It establishes a deterministic, safe, and observable framework for delegating complex software engineering workflows across specialized AI model agents.
+## Overview
 
----
+Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
 
-## 2. System Topology
-The architecture strictly operates as a centralized **Hub-and-Spoke** topology:
+1. **Control Plane (Root Controller):** The model selected in the active session/UI. Responsible for validating all Boss actions against Core policy, executing exact subagent spawns, relaying factual results without mutation, managing Mission Trace persistence, and enforcing fail-closed invariants.
+2. **Decision Plane (Dedicated Skill-Bound Boss):** A dedicated child subagent spawned on the exact model required by the invoked skill (Sol High for `sol-luna-orchestrator-v2`, Grok High for `grok-orchestrator-v2`). Responsible for task planning, packet formation, role selection, verifier assignment, and final acceptance.
+3. **Execution Plane (Workers / Scouts / Verifiers / Reviewers):** Leaf execution subagents.
 
 ```text
-               User / Developer
-                      │
-                      ▼
-                 Parent Boss
-         (Sol High / Grok 4.6 High)
-                      │
-   ┌──────────────────┼──────────────────┬──────────────────┐
-   ▼                  ▼                  ▼                  ▼
- Scout         Standard Worker      Deep Worker    Independent Verifier
-(Read-Only)      (Write-Owned)      (Max-Depth)     (!= Implementer)
-(Gemini Flash)   (Gemini Flash)    (DeepSeek Pro)     (Deterministic)
-   │                  │                  │                  │
-   └──────────────────┼──────────────────┴──────────────────┘
-                      │ (Structured Artifacts & Reports)
-                      ▼
-                 Parent Boss
-                      │
-                      ▼
-               User / Developer
+      User / Developer
+             │
+             ▼
+       ROOT_CONTROLLER
+ (Session Model / Control Plane)
+             │
+             ▼ (spawns & relays)
+      DEDICATED_BOSS
+  (Skill-Bound: Sol High / Grok High)
+             │ (decisions / actions)
+             ▼
+       ROOT_CONTROLLER
+             │ (validated execution)
+   ┌─────────┼─────────┬──────────────────────┬───────────────────────┐
+   ▼         ▼         ▼                      ▼                       ▼
+ Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
+(Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
+(gemini)   (luna)    (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+   │         │         │              │               │               ▲
+   └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
+             │ (Structured Factual Execution Results)
+             ▼
+       ROOT_CONTROLLER
+             │ (lossless relay via follow-up)
+             │
+             └────────────────────────────────────────────────────────┘
+             │
+             ▼
+      User / Developer
 ```
 
-### Delegation Invariants
-- **Leaf Subagent Invariant (`TOPOLOGY_HUB_AND_SPOKE_ONLY`):** All workers and verifiers are leaf subagents. Subagents cannot spawn child agents, cannot delegate to peer agents, and cannot establish nested delegation chains.
-- **Parent Override Blocked:** A prompt from a parent instructing a subagent to spawn additional workers is structurally prohibited by the subagent contract.
-- **Central Integration:** All results, findings, and patches return exclusively to the Parent Boss for synthesis and validation.
+## Six Hard Invariants
 
----
-
-## 3. Component Hierarchy & Layering
-1. **Canonical Shared Core (`ORCHESTRATOR_CORE.md`):**
-   - Single source of truth for routing chains, packet schemas, verification skip logic, failure handling, and mission health.
-2. **Thin Parent Wrappers (`sol-luna-orchestrator-v2`, `grok-orchestrator-v2`):**
-   - Environment and profile bindings for specific parent models (e.g. `gpt-5.6-sol` or `grok-4.6-high`).
-   - Pure consumers of the Shared Core; no local policy deviations.
-3. **Execution Subagents:**
-   - Provider-qualified leaf models declared via `.codex/agents/*.toml`.
-
----
-
-## 4. Context & Task Isolation
-- **`fork_turns="none"`:** Subagents never inherit parent conversation history. This guarantees zero prompt pollution, predictable token consumption, and strict isolation.
-- **Explicit Packet Contracts:** All assignments are communicated via standardized YAML/JSON packets:
-  - `WORKER_TASK_PACKET`: 15 mandatory fields defining objective, boundaries, owned files, forbidden paths, and validation checks.
-  - `VERIFICATION_PACKET`: 13 mandatory fields guaranteeing independent verification criteria without implementer reasoning bias.
-  - `prior_attempt_summary`: 10 mandatory fields driving structured rework cycles.
-- **Zero Chain-of-Thought Leakage:** Packets communicate strictly through factual decisions, citations, and error logs—never private reasoning traces.
-
----
-
-## 5. Development Workspace Topology vs. Runtime
-- **Source Control Topology:** Managed as two Git worktrees: `stable/` (`main`) for audited baselines and `dev/` (`develop`) for all active development.
-- **Runtime Environment:** Deployed separately into `~/.agents` and `~/.codex` via `scripts/install.sh`. Development work never targets the active runtime directly.
+1. **Dedicated Boss Mandatory:** If the Skill-bound Boss cannot be bound on the required model/effort, the mission MUST fail closed with `BOSS_BINDING_UNAVAILABLE`.
+2. **Root Controller Cannot Self-Promote:** The Root Controller MUST NOT take over as Boss or make autonomous orchestration decisions.
+3. **One Persistent Boss Per Mission:** The same dedicated Boss child instance MUST be maintained across the entire mission via child follow-up tasks (`followup_task`).
+4. **Structured/Lossless Factual Relay:** All inter-plane communication occurs via explicit structured packets (`BOSS_MISSION_PACKET`, `BOSS_ACTION_PACKET`, `CHILD_EXECUTION_RESULT`, `BOSS_FOLLOWUP_PACKET`, `FINAL_BOSS_DECISION`).
+5. **Controller Validates Every Action:** The Root Controller strictly validates every Boss request against Core policy before execution.
+6. **Runtime Observability:** Live runtime binding evidence is recorded in `~/.codex/orchestrator-traces/<mission_id>.json`.

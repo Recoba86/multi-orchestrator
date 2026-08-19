@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Multi Orchestrator Comprehensive Verifier
-# Validates presence, syntax, all shipped leaf agent declarations, dynamic routing policy, and critical safety contracts.
+# Validates presence, syntax, all shipped leaf agent declarations, dynamic routing policy, dedicated Boss invariants, and critical safety contracts.
 
 TARGET_HOME="${HOME}"
 
@@ -64,11 +64,13 @@ CORE="${TARGET_HOME}/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md"
 SOL_SKILL="${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/SKILL.md"
 GROK_SKILL="${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/SKILL.md"
 CODEX_AGENTS="${TARGET_HOME}/.codex/agents"
+TRACE_HELPER="${TARGET_HOME}/.agents/bin/mission-trace"
 
 # 1. Existence Checks
 assert_file_exists "${CORE}"
 assert_file_exists "${SOL_SKILL}"
 assert_file_exists "${GROK_SKILL}"
+assert_file_exists "${TRACE_HELPER}"
 
 # 2. Verify Every Shipped Leaf Agent Declaration
 ALL_LEAF_AGENTS=(
@@ -108,24 +110,47 @@ assert_contains "${OPUS_AGENT}" "Do not perform implementation." "Opus prompt fo
 # 4. Context & Packet Isolation
 echo "--- Verifying Context & Packet Contracts ---"
 assert_contains "${CORE}" "fork_turns=\"none\"" "Core enforces fork_turns='none'"
+assert_contains "${CORE}" "BOSS_MISSION_PACKET:" "Boss mission packet schema defined"
+assert_contains "${CORE}" "BOSS_ACTION_PACKET:" "Boss action packet schema defined"
+assert_contains "${CORE}" "CHILD_EXECUTION_RESULT:" "Child execution result schema defined"
+assert_contains "${CORE}" "BOSS_FOLLOWUP_PACKET:" "Boss followup packet schema defined"
+assert_contains "${CORE}" "FINAL_BOSS_DECISION:" "Final Boss decision schema defined"
 assert_contains "${CORE}" "WORKER_TASK_PACKET:" "Worker task packet schema defined"
 assert_contains "${CORE}" "VERIFICATION_PACKET:" "Verification packet schema defined"
 assert_contains "${CORE}" "prior_attempt_summary:" "Rework schema defined"
 assert_contains "${CORE}" "PACKET_INVALID" "Packet invalidity rule defined"
 assert_contains "${CORE}" "Pre-Execution Invariant" "Packet failure blocks worker spawn without provider fallback"
 
-# 5. Verification Invariant & Exhaustion
+# 5. Dedicated Boss & Plane Separation Checks
+echo "--- Verifying Dedicated Boss & Plane Separation Invariants ---"
+assert_contains "${CORE}" "ROOT_CONTROLLER_MUST_NOT_SELF_PROMOTE" "Core enforces Root Controller cannot self-promote"
+assert_contains "${CORE}" "DEDICATED_BOSS_REQUIRED" "Core enforces Dedicated Boss is mandatory"
+assert_contains "${CORE}" "DEDICATED_BOSS_CONTINUITY_REQUIRED" "Core enforces Dedicated Boss continuity across turns"
+assert_contains "${SOL_SKILL}" "Root Controller" "Sol wrapper defines Root Controller"
+assert_contains "${SOL_SKILL}" "Dedicated Boss Mandatory" "Sol wrapper enforces Dedicated Boss requirement"
+assert_contains "${SOL_SKILL}" "BOSS_BINDING_UNAVAILABLE" "Sol wrapper fails closed on Boss binding failure"
+assert_contains "${GROK_SKILL}" "Root Controller" "Grok wrapper defines Root Controller"
+assert_contains "${GROK_SKILL}" "Dedicated Boss Mandatory" "Grok wrapper enforces Dedicated Boss requirement"
+assert_contains "${GROK_SKILL}" "BOSS_BINDING_UNAVAILABLE" "Grok wrapper fails closed on Boss binding failure"
+
+# 6. Verification Invariant & Exhaustion
 echo "--- Verifying Independent Verification & Exhaustion ---"
 assert_contains "${CORE}" "IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK" "Core enforces verifier != implementer"
 assert_contains "${CORE}" "VERIFIER_CHAIN_EXHAUSTED" "Core defines verifier chain exhaustion"
 assert_contains "${CORE}" "Under NO circumstances may the implementer be used to self-verify" "Core forbids self-verification on exhaustion"
 
-# 6. Mutation Safety
+# 7. Mutation Safety
 echo "--- Verifying Mutation Safety ---"
 assert_contains "${CORE}" "AMBIGUOUS_EXECUTION_STATE" "Core defines ambiguous write state"
 assert_contains "${CORE}" "Automatic fallback is **FORBIDDEN**" "Core forbids automatic fallback on ambiguous write"
 
-# 7. Dynamic Routing & Policy Correctness Verification
+# 8. Mission Trace Specification
+echo "--- Verifying Mission Trace Invariants ---"
+assert_contains "${CORE}" "Runtime Mission Trace Specification" "Core defines Mission Trace Specification"
+assert_contains "${CORE}" "~/.codex/orchestrator-traces/<mission_id>.json" "Core defines trace path"
+assert_contains "${CORE}" "Trace Security & Privacy Invariant" "Core defines trace privacy/security invariant"
+
+# 9. Dynamic Routing & Policy Correctness Verification
 echo "--- Dynamically Verifying Routing Policy & Safety Invariants ---"
 if ! python3 -c '
 import sys, re, yaml
@@ -168,7 +193,30 @@ for ep in endpoints:
 
 print(f"[PASS] Endpoint Registry validated dynamically ({len(endpoint_map)} endpoints)")
 
-# B. Dynamic Role Chains Verification
+# B. Skill Boss Bindings Verification
+skill_bindings = parsed_data.get("skill_boss_bindings")
+if not skill_bindings or not isinstance(skill_bindings, dict):
+    print("[FAIL] skill_boss_bindings missing or invalid in Core", file=sys.stderr)
+    sys.exit(1)
+
+for skill_name, s_info in skill_bindings.items():
+    req_ep = s_info.get("required_boss_endpoint")
+    if req_ep not in endpoint_map:
+        print(f"[FAIL] Skill {skill_name} requires unknown Boss endpoint {req_ep}", file=sys.stderr)
+        sys.exit(1)
+    ep = endpoint_map[req_ep]
+    model = s_info.get("model")
+    if model and ep.get("model") and model != ep.get("model"):
+        print(f"[FAIL] Model mismatch for Boss endpoint {req_ep} in skill {skill_name}: expected {ep.get('model')}, got {model}", file=sys.stderr)
+        sys.exit(1)
+    eff = s_info.get("effort")
+    if eff not in ep.get("accepted_efforts", []):
+        print(f"[FAIL] Boss effort {eff} for {req_ep} in skill {skill_name} not in accepted_efforts", file=sys.stderr)
+        sys.exit(1)
+
+print(f"[PASS] Skill Boss bindings validated dynamically ({len(skill_bindings)} skills)")
+
+# C. Dynamic Role Chains Verification
 role_chains = parsed_data.get("role_chains")
 if not role_chains or not isinstance(role_chains, dict):
     print("[FAIL] role_chains missing or invalid in Core", file=sys.stderr)
@@ -213,7 +261,7 @@ for role in required_roles:
 
 print("[PASS] Worker role chains validated dynamically against registry, accepted_efforts, and policy caps")
 
-# C. Dynamic Verifier Chains Verification
+# D. Dynamic Verifier Chains Verification
 verifier_chains = parsed_data.get("verifier_chains")
 if not verifier_chains or not isinstance(verifier_chains, dict):
     print("[FAIL] verifier_chains missing or invalid in Core", file=sys.stderr)

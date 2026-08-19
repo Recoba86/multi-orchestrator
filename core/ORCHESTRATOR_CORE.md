@@ -1,6 +1,6 @@
-# Shared Orchestrator Core (Normative RC2 Architecture)
+# Shared Orchestrator Core (Normative RC3 Architecture — Skill-Bound Dedicated Boss)
 
-This document defines the normative, engine-agnostic orchestration policy, endpoint registry, role routing, packet contracts, failure-handling rules, mission-scoped health circuit breakers, implementer-aware independent verification, and strict reviewer isolation for the Release Candidate 2 (INITIAL_RELEASE_RC2).
+This document defines the normative, engine-agnostic orchestration policy, skill-to-boss bindings, endpoint registry, role routing, packet contracts, failure-handling rules, mission-scoped health circuit breakers, implementer-aware independent verification, strict reviewer isolation, and runtime mission tracing for Release Candidate 3 (RC3).
 
 ---
 
@@ -12,30 +12,47 @@ The system strictly operates as a centralized Hub-and-Spoke topology:
       User / Developer
              │
              ▼
-        Boss / Parent
-  (Sol High / Grok High)
+       ROOT_CONTROLLER
+ (Session Model / Control Plane)
              │
-   ┌─────────┼─────────┬──────────────────────┐
-   ▼         ▼         ▼                      ▼
- Scout    Standard    Deep     Implementer-Aware   Premium
-(Read)     Worker    Worker         Verifier       Reviewer
-(gemini)   (luna)    (dseek)     (!implementer)    (Opus)
-   │         │         │              │               │
-   └─────────┼─────────┴──────────────┴───────────────┘
-             │ (Structured Artifact / Report)
+             ▼ (spawns & relays)
+      DEDICATED_BOSS
+  (Skill-Bound: Sol High / Grok High)
+             │ (decisions / actions)
              ▼
-        Boss / Parent
+       ROOT_CONTROLLER
+             │ (validated execution)
+   ┌─────────┼─────────┬──────────────────────┬───────────────────────┐
+   ▼         ▼         ▼                      ▼                       ▼
+ Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
+(Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
+(gemini)   (luna)    (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+   │         │         │              │               │               ▲
+   └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
+             │ (Structured Factual Execution Results)
+             ▼
+       ROOT_CONTROLLER
+             │ (lossless relay via follow-up)
+             │
+             └────────────────────────────────────────────────────────┘
              │
              ▼
       User / Developer
 ```
 
-### B. Delegation Prohibitions
+### B. Plane Separation & Invariants
+1. **DECISION PLANE (Dedicated Skill-Bound Boss):** The dedicated child agent bound to the exact model required by the invoked Skill (e.g. Grok for `grok-orchestrator-v2`, Sol for `sol-luna-orchestrator-v2`). Responsible for task understanding, decomposition, role selection, verifier assignment, rework decisions, and task completion evaluation.
+2. **CONTROL PLANE (Root Controller):** The model selected in the active session/UI. Responsible strictly for validating Boss actions against Core policy, executing exact agent spawns, relaying factual results without semantic mutation, managing mission trace persistence, and failing closed on violations.
+3. **EXECUTION PLANE (Workers / Scouts / Verifiers / Reviewers):** Leaf execution subagents.
+
+### C. Delegation Prohibitions
 1. **Worker-to-Worker Delegation Forbidden:** Subagents MUST NOT delegate tasks to other subagents.
 2. **Subagent Spawning Forbidden:** Subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST NOT spawn child agents.
 3. **Peer Messaging Forbidden:** Subagents MUST NOT communicate directly with peer subagents.
-4. **No Nested Orchestration:** Only the root Boss may manage mission lifecycle, health breakers, fallback attempts, and verifier dispatch.
-5. **No Implementer Self-Verification:** The implementer of a task is strictly forbidden from verifying its own work.
+4. **Root Controller Must Not Self-Promote (`ROOT_CONTROLLER_MUST_NOT_SELF_PROMOTE`):** The Root Controller MUST NOT independently plan, decompose, choose models/efforts, choose verifiers, or decide task completion.
+5. **Dedicated Boss Mandatory (`DEDICATED_BOSS_REQUIRED`):** If the Skill-bound Boss cannot be bound on the required model/effort, the mission MUST fail closed with `BOSS_BINDING_UNAVAILABLE`. The Root Controller MUST NOT take over as Boss.
+6. **Dedicated Boss Continuity Required (`DEDICATED_BOSS_CONTINUITY_REQUIRED`):** The same Boss child instance MUST be maintained across the entire mission via child follow-up tasks. Re-spawning a new Boss per turn is forbidden.
+7. **No Implementer Self-Verification:** The implementer of a task is strictly forbidden from verifying its own work.
 
 ---
 
@@ -53,20 +70,45 @@ When evaluating system state, capabilities, or configuration, the following stri
 
 ---
 
-## 3. Provider-Qualified Endpoint Registry & Capability Model
+## 3. Skill Boss Bindings & Provider-Qualified Endpoint Registry
 
-### A. Capability & Effort Evidence Model
+### A. Skill Boss Bindings
+```yaml
+skill_boss_bindings:
+  grok-orchestrator-v2:
+    required_boss_endpoint: GROK_4_6_HIGH
+    model: nine-router/gcli/grok-4.6-high
+    effort: high
+    dedicated_boss_required: true
+
+  sol-luna-orchestrator-v2:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-sol
+    effort: high
+    dedicated_boss_required: true
+```
+
+### B. Capability & Effort Evidence Model
 Effort capability is normatively classified into two distinct dimensions:
 - **`accepted_efforts`:** Reasoning effort parameters accepted by the upstream provider API without request rejection.
 - **`effective_effort_status`:**
   - `PROVEN`: Audited and confirmed that distinct effort parameters produce measurable reasoning depth differences.
   - `ACCEPTED_BUT_EFFECTIVE_UNKNOWN`: Parameter accepted by provider, but upstream effective reasoning differentiation is unverified.
 
-### B. Registry
+### C. Registry
 ```yaml
-routing_policy: INITIAL_RELEASE_RC2
+routing_policy: INITIAL_RELEASE_RC3
 
 endpoints:
+  - id: SOL_HIGH
+    capacity_domain: openai_plus_capacity
+    transport_domain: openai_native
+    provider_route: openai
+    model: gpt-5.6-sol
+    accepted_efforts: [low, medium, high, xhigh, max, ultra]
+    effective_effort_status: PROVEN
+    candidate_roles: [boss]
+
   - id: PLUS_LUNA
     family: luna
     capacity_domain: openai_plus_capacity
@@ -138,7 +180,7 @@ endpoints:
     candidate_roles: [boss, deep_worker]
 ```
 
-### C. Operational Capacity vs. Architecture
+### D. Operational Capacity vs. Architecture
 - `ARCHITECTURAL_CORRECTNESS` (the normative validity of chains and safety invariants) is strictly decoupled from `CURRENT_PROVIDER_AVAILABILITY` (transient quotas or outages).
 - Temporary hard exhaustion of `openai_plus_capacity` or other domains is handled via mission-scoped health breakers; it does not alter normative routing design.
 
@@ -195,7 +237,7 @@ role_chains:
 
 ---
 
-## 5. Packet Architecture & Validation (Normative Contracts)
+## 5. Packet Architecture, Protocol & Validation (Normative Contracts)
 
 ### A. Context & Isolation Invariant (`EXPLICIT_PACKET_ONLY`)
 All delegated subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) execute with `fork_turns="none"`. Context isolation is 100% self-contained. The Boss MUST transport all required context through explicit packet fields and MUST NOT rely on inherited parent history.
@@ -203,7 +245,82 @@ All delegated subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, 
 ### B. Private Reasoning Prohibition
 Packets MUST NOT require or transport private hidden reasoning or raw chain-of-thought traces. Communication across agents is strictly restricted to factual summaries, decisions, findings, evidence, assumptions, and required corrections.
 
-### C. WORKER_TASK_PACKET Schema (v1)
+### C. Boss-Controller Protocol Schemas (v1)
+
+#### 1. BOSS_MISSION_PACKET (Controller -> Dedicated Boss)
+```yaml
+BOSS_MISSION_PACKET:
+  packet_version: 1                       # Integer schema version
+  mission_id: string                      # Unique mission identifier (e.g. mission-1787106000)
+  user_goal: string                       # Original verbatim user objective
+  skill_invoked: string                   # Name of skill invoked (e.g. grok-orchestrator-v2)
+  workspace_root: string                  # Canonical absolute workspace root path
+  environment_summary: string             # Factual environment facts (OS, tools available)
+  constraints: [string]                   # Global mission constraints
+```
+
+#### 2. BOSS_ACTION_PACKET (Dedicated Boss -> Controller)
+```yaml
+BOSS_ACTION_PACKET:
+  packet_version: 1                       # Integer schema version
+  mission_id: string                      # Retained mission identifier
+  action_id: string                       # Unique action ID (e.g. act-1)
+  action: string                          # SPAWN_CHILD | MISSION_COMPLETE | MISSION_BLOCKED | REWORK_REQUIRED
+  logical_task_id: string                 # Logical task ID within mission
+  role: string                            # SCOUT | STANDARD_WORKER | DEEP_WORKER | VERIFIER | PREMIUM_SECOND_OPINION
+  requested_endpoint: string              # Exact endpoint ID from registry (e.g. GEMINI_FLASH_HIGH, PLUS_LUNA)
+  requested_model: string                 # Canonical model string
+  requested_effort: string                # low | medium | high | max
+  fork_turns: string                      # MUST be "none"
+  owned_files: [string]                   # Authorized write targets (disjoint)
+  forbidden_files: [string]               # Explicit prohibited paths
+  task_packet: object                     # WORKER_TASK_PACKET or VERIFICATION_PACKET
+  verification_required: boolean          # true for write-capable tasks
+  expected_result_contract: string        # Clear deliverable contract
+```
+
+#### 3. CHILD_EXECUTION_RESULT (Controller Execution Evidence -> Controller Internal)
+```yaml
+CHILD_EXECUTION_RESULT:
+  packet_version: 1                       # Integer schema version
+  mission_id: string                      # Retained mission identifier
+  action_id: string                       # Matches BOSS_ACTION_PACKET action_id
+  logical_task_id: string                 # Matches logical_task_id
+  child_id: string                        # Actual child agent task_name / ID
+  agent_type: string                      # Actual agent_type used for spawn
+  actual_model: string                    # Observable actual model or UNPROVEN
+  actual_effort: string                   # Observable actual effort or UNPROVEN
+  status: string                          # SUCCESS | FAILED | INTERRUPTED | ERROR
+  mutation_state: string                  # NONE | COMMITTED | PARTIAL | UNKNOWN
+  artifacts: [string]                     # Generated/modified file paths
+  test_evidence: string                   # Factual test logs / outputs
+  output_summary: string                  # Factual output from child
+  errors: [string]                        # Error messages if failed
+```
+
+#### 4. BOSS_FOLLOWUP_PACKET (Controller -> Dedicated Boss)
+```yaml
+BOSS_FOLLOWUP_PACKET:
+  packet_version: 1                       # Integer schema version
+  mission_id: string                      # Retained mission identifier
+  child_result: object                    # Lossless CHILD_EXECUTION_RESULT
+  controller_status: string               # READY_FOR_NEXT_ACTION | REJECTION
+  rejection_reason: string                # Populated only if Boss action was rejected by Controller
+```
+
+#### 5. FINAL_BOSS_DECISION (Dedicated Boss -> Controller)
+```yaml
+FINAL_BOSS_DECISION:
+  packet_version: 1                       # Integer schema version
+  mission_id: string                      # Retained mission identifier
+  decision: string                        # COMPLETE | INCOMPLETE | BLOCKED | REWORK_REQUIRED
+  summary: string                         # Factual mission summary
+  completed_tasks: [string]               # List of verified logical task IDs
+  unverified_tasks: [string]              # List of unverified task IDs
+  rework_notes: string                    # Rework requirements if decision is REWORK_REQUIRED
+```
+
+### D. WORKER_TASK_PACKET Schema (v1)
 ```yaml
 WORKER_TASK_PACKET:
   packet_version: 1                       # Integer schema version (1 for RC2)
@@ -223,7 +340,7 @@ WORKER_TASK_PACKET:
   parent_assumptions: [string]            # Explicit assumptions Boss relies on (distinguishable from facts; challengeable)
 ```
 
-#### Worker Packet Validation Rule (`PACKET_INVALID`)
+### E. Worker Packet Validation Rule (`PACKET_INVALID`)
 Before spawning any worker, the Boss MUST validate that all mandatory fields are present and coherent:
 - If `write_allowed: true` but `owned_files` is empty or missing $\rightarrow$ `PACKET_INVALID`.
 - If `objective`, `scope`, `role`, `expected_output`, or `done_when` is missing $\rightarrow$ `PACKET_INVALID`.
@@ -231,7 +348,7 @@ Before spawning any worker, the Boss MUST validate that all mandatory fields are
 
 ---
 
-### D. VERIFICATION_PACKET Schema (v1)
+### F. VERIFICATION_PACKET Schema (v1)
 ```yaml
 VERIFICATION_PACKET:
   packet_version: 1                       # Integer schema version (1 for RC2)
@@ -249,7 +366,7 @@ VERIFICATION_PACKET:
   implementer_reasoning_included: false   # MUST be false (no implementer rationalizations or persuasive narrative)
 ```
 
-#### Verification Packet Independence Invariant (`VERIFICATION_PACKET_INDEPENDENCE`)
+### G. Verification Packet Independence Invariant (`VERIFICATION_PACKET_INDEPENDENCE`)
 The `VERIFICATION_PACKET` MUST NOT contain:
 - The implementer's private reasoning, self-justifications, or narrative arguments ("I made this change because...").
 - Biasing claims such as "the implementation is verified correct; please confirm".
@@ -262,7 +379,7 @@ Verifier Access: `write_allowed: false`. Verifiers must never attempt in-place r
 
 ---
 
-### E. Structured Rework Contract (`prior_attempt_summary`)
+### H. Structured Rework Contract (`prior_attempt_summary`)
 When an implementation fails verification or tests, the Boss initiates controlled rework using a fresh `WORKER_TASK_PACKET` containing a structured `prior_attempt_summary`:
 
 ```yaml
@@ -279,7 +396,7 @@ prior_attempt_summary:
   unchanged_constraints: [string]         # Persistent constraints that remain in effect
 ```
 
-#### Rework Lifecycle & Ownership Preservation Invariant
+### I. Rework Lifecycle & Ownership Preservation Invariant
 ```text
 Worker Attempt
   → Independent Verifier [BLOCK]
@@ -383,7 +500,67 @@ If all candidate verifiers in the base pool are skipped due to implementer confl
 4. **Absolute Prohibition:** Under NO circumstances may the implementer be used to self-verify to escape verifier exhaustion. The task MUST NOT be marked `COMPLETE`.
 ---
 
-## 7. Premium Second Opinion Contract (`OPUS_4_6_THINKING`)
+## 7. Runtime Mission Trace Specification
+
+To provide complete, auditable operational observability, every mission writes a durable Mission Trace to `~/.codex/orchestrator-traces/<mission_id>.json`.
+
+### A. Trace Schema (v1)
+```yaml
+mission:
+  mission_id: string
+  started_at: string                      # ISO-8601 UTC
+  skill: string                           # grok-orchestrator-v2 | sol-luna-orchestrator-v2
+  status: string                          # IN_PROGRESS | COMPLETE | INCOMPLETE | BLOCKED
+
+controller:
+  actual_session_model: string            # Observable session model (or UNPROVEN)
+  role: "ROOT_CONTROLLER"
+
+boss:
+  required_endpoint: string               # GROK_4_6_HIGH | SOL_HIGH
+  requested_model: string                 # Canonical model string
+  requested_effort: string                # high
+  child_id: string                        # Actual task_name of Boss child
+  actual_agent_type: string               # Agent type used
+  actual_model: string                    # Observable actual model (or UNPROVEN)
+  actual_effort: string                   # Observable actual effort (or UNPROVEN)
+  binding_proven: boolean                 # true only if runtime evidence confirms model
+  continuity_proven: boolean              # true only if multi-turn continuity confirmed
+
+actions:
+  - action_id: string
+    logical_task_id: string
+    role: string
+    boss_requested: { endpoint: string, model: string, effort: string }
+    controller_validation: { result: string, reason: string } # VALID | REJECTED
+    controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string }
+    binding_match: boolean
+    result: { status: string, mutation_state: string, errors: [string] }
+
+verification:
+  implementer: string
+  verifier: string
+  independent: boolean
+  model_family_independent: boolean
+  result: string # PASS | BLOCK | UNVERIFIED
+
+rework:
+  count: integer
+
+final:
+  boss_decision: string                   # COMPLETE | INCOMPLETE | BLOCKED | REWORK_REQUIRED
+  mission_result: string                  # Final user status
+```
+
+### B. Trace Security & Privacy Invariant
+Mission traces MUST NOT store API keys, auth headers, passwords, secrets, private reasoning traces, or full verbatim conversation dumps. Only structured operational metadata, task contracts, identifiers, and factual evidence are recorded.
+
+### C. Unproven Evidence Handling
+If an actual runtime field cannot be verified from live events, it MUST be recorded as `UNPROVEN` (or `false` for boolean flags). Fabricating evidence is strictly prohibited.
+
+---
+
+## 8. Premium Second Opinion Contract (`OPUS_4_6_THINKING`)
 
 - **Normative Read-Only Invariant (`PREMIUM_SECOND_OPINION_READ_ONLY`):** `OPUS_4_6_THINKING` when invoked as `PREMIUM_SECOND_OPINION` is strictly **READ-ONLY**. It receives `fork_turns="none"`, `access: read-only`, and `write_ownership: none`.
 - **No Implementation Escape Hatch:** It MUST NOT modify, create, rename, or delete files, and MUST NOT execute mutating commands. If a defect or correction is required, findings return to the Boss to dispatch an authorized write worker under standard ownership rules.
@@ -399,7 +576,7 @@ If all candidate verifiers in the base pool are skipped due to implementer confl
 
 ---
 
-## 8. Failure Classification & Fallback Safety Policy
+## 9. Failure Classification & Fallback Safety Policy
 
 Every failed attempt MUST be explicitly classified before determining next actions:
 
@@ -411,7 +588,7 @@ Every failed attempt MUST be explicitly classified before determining next actio
 
 ---
 
-## 9. Mission Health Ledger & Circuit Breaker Policy
+## 10. Mission Health Ledger & Circuit Breaker Policy
 
 - **Scopes:** `ENDPOINT` | `CAPACITY_DOMAIN` | `TRANSPORT_DOMAIN`.
 - **States:** `ELIGIBLE` | `OPEN_FOR_MISSION` (Resets at start of new mission in memory; no persistent on-disk ledger).
@@ -422,7 +599,7 @@ Every failed attempt MUST be explicitly classified before determining next actio
 
 ---
 
-## 10. Task Lifecycle & Terminal States
+## 11. Task Lifecycle & Terminal States
 
 ### A. Primary Task States
 - **`COMPLETE`**: All requirements verified, tests pass, independent verifier returned PASS.
@@ -438,7 +615,7 @@ Every failed attempt MUST be explicitly classified before determining next actio
 
 ---
 
-## 11. Wrapper Responsibilities & Core Boundary
+## 12. Wrapper Responsibilities & Core Boundary
 
 - Both Sol-Luna (`sol-luna-orchestrator-v2`) and Grok (`grok-orchestrator-v2`) wrappers are strictly thin consumers.
 - **Wrapper Duties:**
