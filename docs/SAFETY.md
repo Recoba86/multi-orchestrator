@@ -9,7 +9,8 @@
 
 ### B. Independent Verification (`IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK`)
 - The agent that performed an implementation is strictly forbidden from acting as its verifier.
-- Verifiers are selected from an implementer-aware candidate pool (`GEMINI_FLASH_HIGH`, `DEEPSEEK_PRO`, `PLUS_LUNA`).
+- Verifiers are selected from deterministic, implementer-aware verifier routing chains defined in Core.
+- `PLUS_LUNA` and `OCG_LUNA` share the same underlying model family (`gpt-5.6-luna`) and are strictly forbidden from verifying each other's implementations (`Luna-family conflict`).
 - If all independent candidates are unavailable or suppressed, the task enters `VERIFIER_CHAIN_EXHAUSTED` and remains `INCOMPLETE`. Under no circumstances is self-verification allowed.
 
 ### C. Premium Reviewer Isolation (Opus 4.6 Thinking)

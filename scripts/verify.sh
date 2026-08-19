@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Multi Orchestrator Comprehensive Verifier
-# Validates presence, syntax, all shipped leaf agent declarations, exact Option A routing, and critical safety contracts.
+# Validates presence, syntax, all shipped leaf agent declarations, dynamic routing policy, and critical safety contracts.
 
 TARGET_HOME="${HOME}"
 
@@ -125,82 +125,178 @@ echo "--- Verifying Mutation Safety ---"
 assert_contains "${CORE}" "AMBIGUOUS_EXECUTION_STATE" "Core defines ambiguous write state"
 assert_contains "${CORE}" "Automatic fallback is **FORBIDDEN**" "Core forbids automatic fallback on ambiguous write"
 
-# 7. Exact Option A Routing & Efforts Verification (Strict Ordering & Effort Parsing)
-echo "--- Verifying Exact Option A Routing & Efforts ---"
+# 7. Dynamic Routing & Policy Correctness Verification
+echo "--- Dynamically Verifying Routing Policy & Safety Invariants ---"
 if ! python3 -c '
-import sys, re
+import sys, re, yaml
 
 core_path = sys.argv[1]
 with open(core_path, "r", encoding="utf-8") as f:
     text = f.read()
 
-# Extract Section 4 text
-sec4_match = re.search(r"## 4\. Logical Roles & Initial Release Routing.*?(?=---|\Z)", text, re.DOTALL)
-if not sec4_match:
-    print("[FAIL] Section 4 Routing not found in Core", file=sys.stderr)
+yaml_blocks = re.findall(r"```yaml\s*\n(.*?)\n```", text, re.DOTALL)
+if not yaml_blocks:
+    print("[FAIL] No structured YAML blocks found in Core", file=sys.stderr)
     sys.exit(1)
 
-sec4 = sec4_match.group(0)
-
-# Expected chains: list of (attempt, endpoint, effort)
-expected_scout = [
-    (1, "GEMINI_FLASH_HIGH", "high"),
-    (2, "DEEPSEEK_FLASH", "high"),
-    (3, "PLUS_LUNA", "medium")
-]
-
-expected_standard = [
-    (1, "PLUS_LUNA", "high"),
-    (2, "GEMINI_FLASH_HIGH", "high"),
-    (3, "DEEPSEEK_FLASH", "high")
-]
-
-expected_deep = [
-    (1, "DEEPSEEK_PRO", "max"),
-    (2, "PLUS_LUNA", "max"),
-    (3, "GEMINI_FLASH_HIGH", "max")
-]
-
-def verify_chain(role_name, expected_entries):
-    role_block_match = re.search(rf"{role_name}:.*?(?=\n  [A-Z_]+:|\n```|\Z)", sec4, re.DOTALL)
-    if not role_block_match:
-        print(f"[FAIL] Role block {role_name} missing", file=sys.stderr)
+parsed_data = {}
+for block in yaml_blocks:
+    try:
+        loaded = yaml.safe_load(block)
+        if isinstance(loaded, dict):
+            parsed_data.update(loaded)
+    except Exception as e:
+        print(f"[FAIL] YAML parse error in Core: {e}", file=sys.stderr)
         sys.exit(1)
-    block = role_block_match.group(0)
-    for att, ep, eff in expected_entries:
-        entry_pattern = rf"attempt:\s*{att}\s+endpoint:\s*{ep}\s+model:\s*\S+\s+effort:\s*{eff}"
-        if not re.search(entry_pattern, block):
-            print(f"[FAIL] Exact routing entry missing or mismatched for {role_name} Attempt {att} (Expected {ep} / {eff})", file=sys.stderr)
+
+# A. Endpoint Registry Verification
+endpoints = parsed_data.get("endpoints")
+if not endpoints or not isinstance(endpoints, list):
+    print("[FAIL] Endpoints registry missing or invalid", file=sys.stderr)
+    sys.exit(1)
+
+endpoint_map = {}
+for ep in endpoints:
+    ep_id = ep.get("id")
+    if not ep_id:
+        print("[FAIL] Endpoint missing identifier in registry", file=sys.stderr)
+        sys.exit(1)
+    if not ep.get("accepted_efforts") or not isinstance(ep.get("accepted_efforts"), list):
+        print(f"[FAIL] Endpoint {ep_id} missing accepted_efforts list", file=sys.stderr)
+        sys.exit(1)
+    endpoint_map[ep_id] = ep
+
+print(f"[PASS] Endpoint Registry validated dynamically ({len(endpoint_map)} endpoints)")
+
+# B. Dynamic Role Chains Verification
+role_chains = parsed_data.get("role_chains")
+if not role_chains or not isinstance(role_chains, dict):
+    print("[FAIL] role_chains missing or invalid in Core", file=sys.stderr)
+    sys.exit(1)
+
+required_roles = ["SCOUT", "STANDARD_WORKER", "DEEP_WORKER"]
+for role in required_roles:
+    chain = role_chains.get(role)
+    if not chain or not isinstance(chain, list) or len(chain) == 0:
+        print(f"[FAIL] Required role {role} missing or empty", file=sys.stderr)
+        sys.exit(1)
+
+    for idx, entry in enumerate(chain):
+        expected_att = idx + 1
+        att = entry.get("attempt")
+        if att != expected_att:
+            print(f"[FAIL] Role {role} attempt numbering must start at 1 and be contiguous (got {att}, expected {expected_att})", file=sys.stderr)
             sys.exit(1)
-    print(f"[PASS] Exact {role_name} routing chain and efforts verified")
 
-verify_chain("SCOUT", expected_scout)
-verify_chain("STANDARD_WORKER", expected_standard)
-verify_chain("DEEP_WORKER", expected_deep)
+        ep_id = entry.get("endpoint")
+        if ep_id not in endpoint_map:
+            print(f"[FAIL] Role {role} references unknown endpoint {ep_id}", file=sys.stderr)
+            sys.exit(1)
 
-# Verify Base Verifier Pool in Section 6.B
-sec6_match = re.search(r"## 6\. Implementer-Aware Independent Verification.*?(?=---|\Z)", text, re.DOTALL)
-if not sec6_match:
-    print("[FAIL] Section 6 Verification not found in Core", file=sys.stderr)
+        ep = endpoint_map[ep_id]
+        model = entry.get("model")
+        if model and ep.get("model") and model != ep.get("model"):
+            print(f"[FAIL] Model mismatch for {ep_id} in {role}: expected {ep.get('model')}, got {model}", file=sys.stderr)
+            sys.exit(1)
+
+        eff = entry.get("effort")
+        if eff not in ep.get("accepted_efforts", []):
+            print(f"[FAIL] Effort {eff} for {ep_id} in {role} not in accepted_efforts {ep.get('accepted_efforts')}", file=sys.stderr)
+            sys.exit(1)
+
+        policy_max = ep.get("policy_max_effort")
+        if policy_max:
+            eff_levels = {"low": 1, "medium": 2, "high": 3, "max": 4}
+            if eff_levels.get(eff, 0) > eff_levels.get(policy_max, 0):
+                print(f"[FAIL] Effort {eff} for {ep_id} in {role} exceeds policy_max_effort {policy_max}", file=sys.stderr)
+                sys.exit(1)
+
+print("[PASS] Worker role chains validated dynamically against registry, accepted_efforts, and policy caps")
+
+# C. Dynamic Verifier Chains Verification
+verifier_chains = parsed_data.get("verifier_chains")
+if not verifier_chains or not isinstance(verifier_chains, dict):
+    print("[FAIL] verifier_chains missing or invalid in Core", file=sys.stderr)
     sys.exit(1)
 
-sec6 = sec6_match.group(0)
-expected_pool = [
-    "`GEMINI_FLASH_HIGH` (effort: high)",
-    "`DEEPSEEK_PRO` (effort: high)",
-    "`PLUS_LUNA` (effort: high)"
-]
-for p in expected_pool:
-    if p not in sec6:
-        print(f"[FAIL] Base Verifier Pool candidate {p} missing in Section 6.B", file=sys.stderr)
+# Ensure every write-capable implementation endpoint in worker chains has a valid verifier chain
+write_implementers = set()
+for r in ["STANDARD_WORKER", "DEEP_WORKER"]:
+    for entry in role_chains.get(r, []):
+        write_implementers.add(entry.get("endpoint"))
+
+for imp_id in write_implementers:
+    if imp_id not in verifier_chains:
+        print(f"[FAIL] Write implementer {imp_id} has no defined verifier chain", file=sys.stderr)
         sys.exit(1)
 
-print("[PASS] Exact Base Verifier Pool candidates and efforts verified")
+for imp_id, v_chain in verifier_chains.items():
+    if imp_id not in endpoint_map:
+        print(f"[FAIL] Verifier chain defined for unknown implementer {imp_id}", file=sys.stderr)
+        sys.exit(1)
+
+    imp_ep = endpoint_map[imp_id]
+    imp_family = imp_ep.get("family")
+
+    if not v_chain or not isinstance(v_chain, list) or len(v_chain) == 0:
+        print(f"[FAIL] Verifier chain for {imp_id} is empty", file=sys.stderr)
+        sys.exit(1)
+
+    valid_verifiers_count = 0
+    for idx, entry in enumerate(v_chain):
+        expected_att = idx + 1
+        att = entry.get("attempt")
+        if att != expected_att:
+            print(f"[FAIL] Verifier chain for {imp_id} attempt numbering must be contiguous starting at 1 (got {att}, expected {expected_att})", file=sys.stderr)
+            sys.exit(1)
+
+        v_id = entry.get("endpoint")
+        if v_id not in endpoint_map:
+            print(f"[FAIL] Verifier chain for {imp_id} references unknown endpoint {v_id}", file=sys.stderr)
+            sys.exit(1)
+
+        v_ep = endpoint_map[v_id]
+
+        # Invariant 1: Exact Implementer Self-Conflict
+        if v_id == imp_id:
+            print(f"[FAIL] Exact self-verification prohibited: {v_id} cannot verify itself", file=sys.stderr)
+            sys.exit(1)
+
+        # Invariant 2: Model Family Conflict (e.g. PLUS_LUNA <-> OCG_LUNA)
+        v_family = v_ep.get("family")
+        if imp_family and v_family and imp_family == v_family:
+            print(f"[FAIL] Same model family conflict prohibited: verifier {v_id} and implementer {imp_id} both belong to family {imp_family}", file=sys.stderr)
+            sys.exit(1)
+
+        model = entry.get("model")
+        if model and v_ep.get("model") and model != v_ep.get("model"):
+            print(f"[FAIL] Model mismatch for verifier {v_id}: expected {v_ep.get('model')}, got {model}", file=sys.stderr)
+            sys.exit(1)
+
+        eff = entry.get("effort")
+        if eff not in v_ep.get("accepted_efforts", []):
+            print(f"[FAIL] Effort {eff} for verifier {v_id} not in accepted_efforts {v_ep.get('accepted_efforts')}", file=sys.stderr)
+            sys.exit(1)
+
+        policy_max = v_ep.get("policy_max_effort")
+        if policy_max:
+            eff_levels = {"low": 1, "medium": 2, "high": 3, "max": 4}
+            if eff_levels.get(eff, 0) > eff_levels.get(policy_max, 0):
+                print(f"[FAIL] Effort {eff} for verifier {v_id} exceeds policy_max_effort {policy_max}", file=sys.stderr)
+                sys.exit(1)
+
+        valid_verifiers_count += 1
+
+    if valid_verifiers_count == 0:
+        print(f"[FAIL] Implementer {imp_id} has no valid independent verifiers", file=sys.stderr)
+        sys.exit(1)
+
+print("[PASS] Verifier chains validated dynamically: self-conflicts and model-family conflicts enforced")
 ' "${CORE}"; then
-  echo "[FAIL] Exact Option A Routing verification failed" >&2
+  echo "[FAIL] Dynamic Routing verification failed" >&2
   FAILED=1
 else
-  echo "[PASS] Exact Option A Routing & Efforts verified"
+  echo "[PASS] Dynamic Routing & Policy Safety verified"
 fi
 
 echo ""

@@ -68,6 +68,7 @@ routing_policy: INITIAL_RELEASE_RC2
 
 endpoints:
   - id: PLUS_LUNA
+    family: luna
     capacity_domain: openai_plus_capacity
     transport_domain: openai_native
     provider_route: openai
@@ -104,6 +105,7 @@ endpoints:
     effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
 
   - id: OCG_LUNA
+    family: luna
     capacity_domain: opencode_go_capacity
     transport_domain: opencode_go_responses
     provider_route: opencode-go-responses
@@ -162,13 +164,13 @@ role_chains:
 
   STANDARD_WORKER: # Routine implementation with High reasoning; DeepSeek Flash fallback
     - attempt: 1
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
-      effort: high
-    - attempt: 2
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
       effort: high
+    - attempt: 2
+      endpoint: PLUS_LUNA
+      model: gpt-5.6-luna
+      effort: max
     - attempt: 3
       endpoint: DEEPSEEK_FLASH
       model: opencode-go/deepseek-v4-flash
@@ -279,12 +281,12 @@ prior_attempt_summary:
 
 #### Rework Lifecycle & Ownership Preservation Invariant
 ```text
-Worker Attempt 
-  → Independent Verifier [BLOCK] 
-  → Boss generates prior_attempt_summary 
-  → Corrective WORKER_TASK_PACKET (fork_turns="none", same logical_task_id, preserved owned_files) 
-  → Corrective Worker 
-  → Independent Verifier [PASS] 
+Worker Attempt
+  → Independent Verifier [BLOCK]
+  → Boss generates prior_attempt_summary
+  → Corrective WORKER_TASK_PACKET (fork_turns="none", same logical_task_id, preserved owned_files)
+  → Corrective Worker
+  → Independent Verifier [PASS]
   → Boss Integration
 ```
 - The corrective worker receives the `prior_attempt_summary` inside `relevant_context` or dedicated packet fields.
@@ -302,17 +304,74 @@ IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK
 ```
 Every verifier must execute with `fork_turns="none"` and an independent `VERIFICATION_PACKET`.
 
-### B. Base Verifier Pool & Filtering Order
-Base Candidate Pool:
-1. `GEMINI_FLASH_HIGH` (effort: high)
-2. `DEEPSEEK_PRO` (effort: high)
-3. `PLUS_LUNA` (effort: high)
+### B. Authoritative Implementer-Aware Verifier Routing & Chains
 
-Filtering rules applied before verifier dispatch:
-- **If completed by `PLUS_LUNA`:** Verifier Attempt 1 = `GEMINI_FLASH_HIGH` $\rightarrow$ Attempt 2 = `DEEPSEEK_PRO` (`PLUS_LUNA` is `SKIPPED_IMPLEMENTER_CONFLICT`).
-- **If completed by `GEMINI_FLASH_HIGH`:** Verifier Attempt 1 = `DEEPSEEK_PRO` $\rightarrow$ Attempt 2 = `PLUS_LUNA` (`GEMINI_FLASH_HIGH` is `SKIPPED_IMPLEMENTER_CONFLICT`).
-- **If completed by `DEEPSEEK_PRO` or `DEEPSEEK_FLASH`:** Verifier Attempt 1 = `GEMINI_FLASH_HIGH` $\rightarrow$ Attempt 2 = `PLUS_LUNA`.
-- **If completed by `OCG_LUNA`:** Verifier Attempt 1 = `GEMINI_FLASH_HIGH` $\rightarrow$ Attempt 2 = `DEEPSEEK_PRO`.
+```yaml
+verifier_chains:
+  GEMINI_FLASH_HIGH:
+    - attempt: 1
+      endpoint: PLUS_LUNA
+      model: gpt-5.6-luna
+      effort: max
+    - attempt: 2
+      endpoint: OCG_LUNA
+      model: opencode-go-responses/gpt-5.6-luna
+      effort: high
+
+  PLUS_LUNA:
+    - attempt: 1
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+    - attempt: 2
+      endpoint: DEEPSEEK_PRO
+      model: opencode-go/deepseek-v4-pro
+      effort: high
+
+  OCG_LUNA:
+    - attempt: 1
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+    - attempt: 2
+      endpoint: DEEPSEEK_PRO
+      model: opencode-go/deepseek-v4-pro
+      effort: high
+
+  DEEPSEEK_PRO:
+    - attempt: 1
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+    - attempt: 2
+      endpoint: PLUS_LUNA
+      model: gpt-5.6-luna
+      effort: max
+    - attempt: 3
+      endpoint: OCG_LUNA
+      model: opencode-go-responses/gpt-5.6-luna
+      effort: high
+
+  DEEPSEEK_FLASH:
+    - attempt: 1
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+    - attempt: 2
+      endpoint: PLUS_LUNA
+      model: gpt-5.6-luna
+      effort: max
+    - attempt: 3
+      endpoint: OCG_LUNA
+      model: opencode-go-responses/gpt-5.6-luna
+      effort: high
+```
+
+#### Verifier Independence & Filtering Invariants:
+1. **Exact Implementer Self-Conflict:** A verifier endpoint must never verify its own implementation (e.g. `GEMINI_FLASH_HIGH` cannot verify `GEMINI_FLASH_HIGH`).
+2. **Luna Model-Family Conflict:** `PLUS_LUNA` and `OCG_LUNA` share the same underlying model family (`gpt-5.6-luna`). Therefore, `PLUS_LUNA` implementations CANNOT be verified by `OCG_LUNA`, and `OCG_LUNA` implementations CANNOT be verified by `PLUS_LUNA`.
+3. **DeepSeek Pro Scope:** `DEEPSEEK_PRO` is reserved primarily for deep worker implementations and specific non-Gemini verifier fallback. It is NOT the normal verifier fallback for `GEMINI_FLASH_HIGH` work.
+4. **Effort Caps:** `OCG_LUNA` has `policy_max_effort: high`, so verifier attempts for `OCG_LUNA` are capped at `high`. `PLUS_LUNA` verifier attempts execute at `max`.
 
 *Skip semantics:* `SKIPPED_IMPLEMENTER_CONFLICT` and `SKIPPED_HEALTH_SUPPRESSED` do **NOT** consume an attempt number.
 
@@ -322,7 +381,6 @@ If all candidate verifiers in the base pool are skipped due to implementer confl
 2. The task state remains `INCOMPLETE`.
 3. The Boss MUST report `TASK_UNVERIFIED_DUE_TO_VERIFIER_EXHAUSTION` to the user.
 4. **Absolute Prohibition:** Under NO circumstances may the implementer be used to self-verify to escape verifier exhaustion. The task MUST NOT be marked `COMPLETE`.
-
 ---
 
 ## 7. Premium Second Opinion Contract (`OPUS_4_6_THINKING`)

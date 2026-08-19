@@ -19,7 +19,7 @@ The architecture strictly operates as a centralized **Hub-and-Spoke** topology:
    ▼                  ▼                  ▼                  ▼
  Scout         Standard Worker      Deep Worker    Independent Verifier
 (Read-Only)      (Write-Owned)      (Max-Depth)     (!= Implementer)
-(Gemini Flash)    (Plus Luna)      (DeepSeek Pro)     (Pool-Based)
+(Gemini Flash)   (Gemini Flash)    (DeepSeek Pro)     (Deterministic)
    │                  │                  │                  │
    └──────────────────┼──────────────────┴──────────────────┘
                       │ (Structured Artifacts & Reports)

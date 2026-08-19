@@ -30,7 +30,7 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
    ▼                  ▼                  ▼                  ▼
  Scout         Standard Worker      Deep Worker    Independent Verifier
 (Read-Only)      (Write-Owned)      (Max-Depth)     (!= Implementer)
-(Gemini Flash)    (Plus Luna)      (DeepSeek Pro)     (Pool-Based)
+(Gemini Flash)   (Gemini Flash)    (DeepSeek Pro)     (Deterministic)
    │                  │                  │                  │
    └──────────────────┼──────────────────┴──────────────────┘
                       │ (Structured Artifacts & Reports)
