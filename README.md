@@ -8,12 +8,14 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
 
 ## Key Features
 
-- **Strict Hub-and-Spoke Topology:** Subagents operate as pure leaf nodes. Subagent spawning, nested delegation, and peer chatter are prohibited.
-- **Total Context Isolation (`fork_turns="none"`):** Subagents execute with zero parent conversation history, receiving 100% self-contained task packets.
+- **Strict Hub-and-Spoke Protocol:** Controller-submitted requests assign subagents as leaf nodes and prohibit nested delegation or peer chatter.
+- **Requested Context Isolation (`fork_turns="none"`):** Controller-submitted requests use self-contained task packets without inherited turns.
 - **Implementer-Aware Independent Verification:** The agent that implements code cannot verify it (`verifier != implementer`). If verifiers are exhausted, tasks remain unverified rather than self-approved.
-- **Fail-Closed Mutation Safety:** Ambiguous execution states on write-capable workers block further mutations.
-- **Dedicated Read-Only Premium Review:** High-stakes architectural and security evaluations use Claude Opus 4.6 Thinking in a strictly read-only, non-mutating capacity.
-- **Deterministic 3-Attempt Fallback:** Predictable routing chains across Scout, Standard Worker, and Deep Worker roles.
+- **Fail-Closed Mutation Safety:** Ambiguous write state makes the Controller refuse further write-capable requests.
+- **Dedicated Read-Only Premium Review:** High-stakes review requests assign Claude Opus 4.6 Thinking a read-only, non-mutating contract.
+- **Deterministic 3-Attempt Fallback:** Predictable request-routing chains across Scout, Standard Worker, and Deep Worker roles.
+
+These are repository protocol guarantees. Native child allocation, effective identity, and Host-wide admission are `HOST_EXTERNAL`; this repository does not intercept or authorize them. See the authoritative [Execution Boundary Model](core/ORCHESTRATOR_CORE.md#execution-boundary-model-host_external--authoritative).
 
 ---
 
@@ -26,13 +28,13 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
        ROOT_CONTROLLER
  (Session Model / Control Plane)
              │
-             ▼ (spawns & relays)
+             ▼ (submits Host requests & relays)
       DEDICATED_BOSS
   (Skill-Bound: Sol High / Grok High)
              │ (decisions / actions)
              ▼
        ROOT_CONTROLLER
-             │ (validated execution)
+             │ (protocol-validated Host requests)
    ┌─────────┼─────────┬──────────────────────┬───────────────────────┐
    ▼         ▼         ▼                      ▼                       ▼
  Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss

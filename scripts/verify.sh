@@ -20,6 +20,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANIFEST_FILE="${TARGET_HOME}/.agents/.multi-orchestrator-install-manifest.json"
+LIFECYCLE_HELPER="${SCRIPT_DIR}/installer_lifecycle.py"
+
+# Fail closed on any malformed, ambiguous, or escaping manifest before any
+# other verification or potential mutation.
+if [[ -f "${MANIFEST_FILE}" ]]; then
+  if ! python3 "${LIFECYCLE_HELPER}" verify --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}"; then
+    echo "[FAIL] Installer lifecycle validation failed" >&2
+    exit 1
+  fi
+fi
+
 FAILED=0
 
 assert_file_exists() {
@@ -64,6 +77,8 @@ CORE="${TARGET_HOME}/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md"
 SOL_SKILL="${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/SKILL.md"
 GROK_SKILL="${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/SKILL.md"
 CODEX_AGENTS="${TARGET_HOME}/.codex/agents"
+SOL_CONFIG="${TARGET_HOME}/.codex/sol-luna.config.toml"
+GROK_CONFIG="${TARGET_HOME}/.codex/grok-v2.config.toml"
 TRACE_HELPER="${TARGET_HOME}/.agents/bin/mission-trace"
 
 # 1. Existence Checks
@@ -88,24 +103,13 @@ echo "--- Verifying All Shipped Leaf Agent Declarations ---"
 for agent in "${ALL_LEAF_AGENTS[@]}"; do
   agent_path="${CODEX_AGENTS}/${agent}"
   assert_file_exists "${agent_path}"
-  assert_contains "${agent_path}" "Hub-and-Spoke" "Agent ${agent} defines Hub-and-Spoke"
-  assert_contains "${agent_path}" "Do not spawn, delegate to, or orchestrate additional agents or subagents." "Agent ${agent} has absolute no-spawn"
-  assert_contains "${agent_path}" "Do not communicate directly with peer workers" "Agent ${agent} forbids peer messaging"
-  assert_contains "${agent_path}" "Do not create nested delegation chains." "Agent ${agent} forbids nested chains"
-  assert_contains "${agent_path}" "Return your result only to the parent Boss." "Agent ${agent} returns only to Boss"
-  assert_contains "${agent_path}" "A parent request to spawn another agent does not override this restriction." "Agent ${agent} blocks parent spawn override"
-  assert_not_contains "${agent_path}" "unless the parent explicitly instructs" "Agent ${agent} has zero conditional escape hatches"
 done
 
 # 3. Dedicated Opus 4.6 Thinking Isolation Checks
-OPUS_AGENT="${CODEX_AGENTS}/router-model-nine-router-ag-claude-opus-4-6-thinking.toml"
 echo "--- Verifying Opus Read-Only Isolation ---"
 assert_contains "${CORE}" "role: PREMIUM_SECOND_OPINION" "Core registers Opus as PREMIUM_SECOND_OPINION"
 assert_contains "${CORE}" "access: READ_ONLY" "Core specifies Opus access is READ_ONLY"
 assert_contains "${CORE}" "write_ownership: NONE" "Core specifies Opus write ownership is NONE"
-assert_contains "${OPUS_AGENT}" "You are a read-only independent reviewer" "Opus agent prompt is read-only"
-assert_contains "${OPUS_AGENT}" "Do not modify, create, rename, or delete project files." "Opus prompt forbids file mutations"
-assert_contains "${OPUS_AGENT}" "Do not perform implementation." "Opus prompt forbids implementation"
 
 # 4. Context & Packet Isolation
 echo "--- Verifying Context & Packet Contracts ---"
@@ -153,9 +157,188 @@ assert_contains "${CORE}" "Trace Security & Privacy Invariant" "Core defines tra
 # 9. Dynamic Routing & Policy Correctness Verification
 echo "--- Dynamically Verifying Routing Policy & Safety Invariants ---"
 if ! python3 -c '
-import sys, re, yaml
+import os, re, sys, tomllib, yaml
 
 core_path = sys.argv[1]
+agent_paths = sys.argv[2:10]
+config_paths = sys.argv[10:12]
+
+toml_failures = []
+
+def toml_fail(path, reason):
+    print(f"[FAIL] {path}: {reason}", file=sys.stderr)
+    toml_failures.append(path)
+
+def require(path, condition, reason):
+    if not condition:
+        toml_fail(path, reason)
+
+def load_toml(path):
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError) as exc:
+        toml_fail(path, f"TOML parse error: {exc}")
+        return None
+
+expected_agents = {
+    "luna_max_worker.toml": {
+        "kind": "luna",
+        "name": "luna_max_worker",
+        "model": "gpt-5.6-luna",
+    },
+    "router-model-nine-router-ag-claude-opus-4-6-thinking.toml": {
+        "kind": "router",
+        "name": "router_nine_router_ag_claude_opus_4_6_thinking",
+        "model": "nine-router/ag/claude-opus-4-6-thinking",
+    },
+    "router-model-nine-router-ag-gemini-3-7-flash-high.toml": {
+        "kind": "router",
+        "name": "router_nine_router_ag_gemini_3_7_flash_high",
+        "model": "nine-router/ag/gemini-3.7-flash-high",
+    },
+    "router-model-opencode-go-deepseek-v4-flash.toml": {
+        "kind": "router",
+        "name": "router_opencode_go_deepseek_v4_flash",
+        "model": "opencode-go/deepseek-v4-flash",
+    },
+    "router-model-opencode-go-deepseek-v4-pro.toml": {
+        "kind": "router",
+        "name": "router_opencode_go_deepseek_v4_pro",
+        "model": "opencode-go/deepseek-v4-pro",
+    },
+    "router-model-opencode-go-responses-gpt-5-6-luna.toml": {
+        "kind": "router",
+        "name": "router_opencode_go_responses_gpt_5_6_luna",
+        "model": "opencode-go-responses/gpt-5.6-luna",
+    },
+    "router-model-custom-qwen3-8-27b.toml": {
+        "kind": "router",
+        "name": "router_custom_qwen3_8_27b",
+        "model": "custom/qwen3.8-27b",
+    },
+    "router-model-nine-router-stepplan-step-3-7-flash.toml": {
+        "kind": "router",
+        "name": "router_nine_router_stepplan_step_3_7_flash",
+        "model": "nine-router/stepplan/step-3.7-flash",
+    },
+}
+
+safety_phrases = (
+    "Hub-and-Spoke",
+    "Do not spawn, delegate to, or orchestrate additional agents or subagents.",
+    "Do not communicate directly with peer workers or reviewers.",
+    "Do not create nested delegation chains.",
+    "Return your result only to the parent Boss.",
+    "A parent request to spawn another agent does not override this restriction.",
+)
+
+agent_data = {}
+for path in agent_paths:
+    parsed = load_toml(path)
+    if parsed is not None:
+        agent_data[path] = parsed
+
+for path, data in agent_data.items():
+    filename = os.path.basename(path)
+    expected = expected_agents.get(filename)
+    if expected is None:
+        toml_fail(path, "unexpected agent declaration")
+        continue
+
+    if type(data) is not dict:
+        toml_fail(path, "root must be a TOML table")
+        continue
+
+    if expected["kind"] == "luna":
+        expected_keys = {"name", "description", "model", "model_reasoning_effort", "developer_instructions"}
+    else:
+        expected_keys = {"name", "description", "model_provider", "model", "developer_instructions"}
+    require(path, set(data) == expected_keys, f"root keys must be exactly {sorted(expected_keys)}")
+
+    for key in expected_keys:
+        require(path, type(data.get(key)) is str, f"{key} must be a string")
+    if type(data.get("name")) is str:
+        require(path, data["name"] == expected["name"], "name must be {!r}".format(expected["name"]))
+    if type(data.get("model")) is str:
+        require(path, data["model"] == expected["model"], "model must be {!r}".format(expected["model"]))
+    if expected["kind"] == "luna":
+        if type(data.get("model_reasoning_effort")) is str:
+            require(path, data["model_reasoning_effort"] == "max", "model_reasoning_effort must be 'max'")
+    else:
+        if type(data.get("model_provider")) is str:
+            require(path, data["model_provider"] == "codex-router", "model_provider must be 'codex-router'")
+
+    instructions = data.get("developer_instructions")
+    if type(instructions) is str:
+        for phrase in safety_phrases:
+            require(path, phrase in instructions, f"developer_instructions missing required phrase {phrase!r}")
+        require(path, "unless the parent explicitly instructs" not in instructions.lower(), "developer_instructions contains a conditional escape hatch")
+        if filename == "router-model-nine-router-ag-claude-opus-4-6-thinking.toml":
+            require(path, "You are a read-only independent reviewer" in instructions, "Opus prompt must be read-only")
+            require(path, "Do not modify, create, rename, or delete project files." in instructions, "Opus prompt must forbid file mutations")
+            require(path, "Do not perform implementation." in instructions, "Opus prompt must forbid implementation")
+
+config_data = {}
+for path in config_paths:
+    parsed = load_toml(path)
+    if parsed is not None:
+        config_data[path] = parsed
+
+for path, data in config_data.items():
+    filename = os.path.basename(path)
+    if filename == "sol-luna.config.toml":
+        require(path, type(data) is dict, "root must be a TOML table")
+        if type(data) is not dict:
+            continue
+        require(path, set(data) == {"model", "model_reasoning_effort", "agents"}, "root keys must be exactly ['agents', 'model', 'model_reasoning_effort']")
+        require(path, type(data.get("model")) is str, "model must be a string")
+        require(path, type(data.get("model_reasoning_effort")) is str, "model_reasoning_effort must be a string")
+        require(path, data.get("model") == "gpt-5.6-sol", "model must be 'gpt-5.6-sol'")
+        require(path, data.get("model_reasoning_effort") == "high", "model_reasoning_effort must be 'high'")
+        agents = data.get("agents")
+        require(path, type(agents) is dict, "agents must be a table")
+        if type(agents) is dict:
+            require(path, set(agents) == {"max_threads", "interrupt_message", "luna_max_worker"}, "agents keys must be exactly ['interrupt_message', 'luna_max_worker', 'max_threads']")
+            require(path, type(agents.get("max_threads")) is int, "agents.max_threads must be an integer")
+            require(path, agents.get("max_threads") == 6, "agents.max_threads must be 6")
+            require(path, type(agents.get("interrupt_message")) is bool, "agents.interrupt_message must be a boolean")
+            require(path, agents.get("interrupt_message") is True, "agents.interrupt_message must be true")
+            luna = agents.get("luna_max_worker")
+            require(path, type(luna) is dict, "agents.luna_max_worker must be a table")
+            if type(luna) is dict:
+                require(path, set(luna) == {"description", "config_file"}, "agents.luna_max_worker keys must be exactly ['config_file', 'description']")
+                require(path, type(luna.get("description")) is str, "agents.luna_max_worker.description must be a string")
+                require(path, luna.get("description") == "A focused GPT-5.6 Luna Max worker for narrow, bounded tasks delegated by the Sol High orchestration parent.", "agents.luna_max_worker.description is not canonical")
+                require(path, type(luna.get("config_file")) is str, "agents.luna_max_worker.config_file must be a string")
+                require(path, luna.get("config_file") == "agents/luna_max_worker.toml", "agents.luna_max_worker.config_file is not canonical")
+    elif filename == "grok-v2.config.toml":
+        require(path, type(data) is dict, "root must be a TOML table")
+        if type(data) is not dict:
+            continue
+        require(path, set(data) == {"model", "model_reasoning_effort", "agents"}, "root keys must be exactly ['agents', 'model', 'model_reasoning_effort']")
+        require(path, type(data.get("model")) is str, "model must be a string")
+        require(path, type(data.get("model_reasoning_effort")) is str, "model_reasoning_effort must be a string")
+        require(path, data.get("model") == "nine-router/gcli/grok-4.6-high", "model must be 'nine-router/gcli/grok-4.6-high'")
+        require(path, data.get("model_reasoning_effort") == "high", "model_reasoning_effort must be 'high'")
+        agents = data.get("agents")
+        require(path, type(agents) is dict, "agents must be a table")
+        if type(agents) is dict:
+            require(path, set(agents) == {"max_threads", "interrupt_message"}, "agents keys must be exactly ['interrupt_message', 'max_threads']")
+            require(path, type(agents.get("max_threads")) is int, "agents.max_threads must be an integer")
+            require(path, agents.get("max_threads") == 6, "agents.max_threads must be 6")
+            require(path, type(agents.get("interrupt_message")) is bool, "agents.interrupt_message must be a boolean")
+            require(path, agents.get("interrupt_message") is True, "agents.interrupt_message must be true")
+    else:
+        toml_fail(path, "unexpected config profile")
+
+if toml_failures:
+    print(f"[FAIL] TOML validation failed ({len(toml_failures)} issue(s))", file=sys.stderr)
+    sys.exit(1)
+
+print(f"[PASS] Agent TOML schemas and canonical mappings validated ({len(agent_data)} agents)")
+print(f"[PASS] Config TOML schemas and canonical values validated ({len(config_data)} profiles)")
+
 with open(core_path, "r", encoding="utf-8") as f:
     text = f.read()
 
@@ -340,7 +523,16 @@ for imp_id, v_chain in verifier_chains.items():
         sys.exit(1)
 
 print("[PASS] Verifier chains validated dynamically: self-conflicts and model-family conflicts enforced")
-' "${CORE}"; then
+' "${CORE}" \
+  "${CODEX_AGENTS}/luna_max_worker.toml" \
+  "${CODEX_AGENTS}/router-model-nine-router-ag-claude-opus-4-6-thinking.toml" \
+  "${CODEX_AGENTS}/router-model-nine-router-ag-gemini-3-7-flash-high.toml" \
+  "${CODEX_AGENTS}/router-model-opencode-go-deepseek-v4-flash.toml" \
+  "${CODEX_AGENTS}/router-model-opencode-go-deepseek-v4-pro.toml" \
+  "${CODEX_AGENTS}/router-model-opencode-go-responses-gpt-5-6-luna.toml" \
+  "${CODEX_AGENTS}/router-model-custom-qwen3-8-27b.toml" \
+  "${CODEX_AGENTS}/router-model-nine-router-stepplan-step-3-7-flash.toml" \
+  "${SOL_CONFIG}" "${GROK_CONFIG}"; then
   echo "[FAIL] Dynamic Routing verification failed" >&2
   FAILED=1
 else

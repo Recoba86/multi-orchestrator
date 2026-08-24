@@ -3,9 +3,10 @@
 ## Current State: Release Candidate 3 (RC3 — Dedicated Boss) — Checkpoint Accepted
 
 - **Checkpoint Date:** 2026-08-20
-- **Baseline Commit:** `131cc9393c6877976872fce052e9ed415b45f473`
+- **Baseline Commit:** `c1cd71b8aa141a3bccf34c99ea797fbc734c1ff1`
+- **Accepted Tag:** `rc3-runtime-accepted-2026-08-20`
 - **Architecture Status:** ACCEPTED
-- **Runtime Status:** READY_FOR_NORMAL_USE
+- **Runtime Status:** READY_FOR_NORMAL_USE (repository protocol/request-path boundary only; native Host allocation/enforcement remains HOST_EXTERNAL)
 
 ### Key Architecture Deliverables
 - **Dedicated Boss Architecture:** Completed and verified (Grok 4.6 High / Sol 5.6).

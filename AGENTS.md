@@ -98,12 +98,12 @@ When Multi Orchestrator is used to develop or enhance Multi Orchestrator itself:
 
 ## 7. Core Architecture & Safety Invariants
 Multi Orchestrator is governed by strict, fail-closed safety contracts:
-- **Strict Hub-and-Spoke (`TOPOLOGY_HUB_AND_SPOKE_ONLY`):** Boss coordinates; subagents are absolute leaf nodes. Subagents cannot spawn children, delegate to peers, or form nested chains. Parent prompt instructions cannot override this rule.
-- **Context Isolation (`fork_turns="none"`):** Subagents execute with zero parent history; all context is passed via self-contained packets (`WORKER_TASK_PACKET`, `VERIFICATION_PACKET`, `prior_attempt_summary`).
-- **Packet Invalidity Pre-Dispatch Check (`PACKET_INVALID`):** Invalid or incomplete task packets MUST NOT be dispatched. Packet construction/validation failure is a parent contract defect, not a provider failure, and MUST NOT trigger provider fallback.
-- **Independent Verification (`IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK`):** Implementers cannot verify their own changes. Verifier chain exhaustion leaves tasks `INCOMPLETE` without self-verification.
-- **Fail-Closed Mutation Safety:** Ambiguous execution states (`AMBIGUOUS_EXECUTION_STATE`) block secondary write retries.
-- **Dedicated Read-Only Reviewer:** Claude Opus 4.6 Thinking is strictly `READ_ONLY` (`write_ownership: NONE`).
+- **Strict Hub-and-Spoke (`TOPOLOGY_HUB_AND_SPOKE_ONLY`):** The Boss coordinates; Controller-submitted packets assign subagents as leaf nodes, and the Controller refuses packets requesting child spawning, peer delegation, or nested chains. Parent prompt instructions cannot override this rule.
+- **Requested Context Isolation (`fork_turns="none"`):** Controller-submitted packets request zero inherited parent history; all required context is passed via self-contained packets (`WORKER_TASK_PACKET`, `VERIFICATION_PACKET`, `prior_attempt_summary`). Host context construction remains `HOST_EXTERNAL`.
+- **Packet Invalidity Pre-Dispatch Check (`PACKET_INVALID`):** The Controller MUST NOT submit invalid or incomplete task packets or provider fallback requests. Packet construction/validation failure is a parent contract defect, not a provider failure.
+- **Independent Verification (`IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK`):** The Controller rejects packets assigning an implementer as its own verifier. Verifier chain exhaustion leaves tasks `INCOMPLETE` without self-verification.
+- **Fail-Closed Mutation Safety:** The Controller refuses secondary write requests after ambiguous execution states (`AMBIGUOUS_EXECUTION_STATE`).
+- **Dedicated Read-Only Reviewer:** The Controller's premium-review packet specifies Claude Opus 4.6 Thinking as `READ_ONLY` (`write_ownership: NONE`); Host enforcement remains `HOST_EXTERNAL`.
 
 ### Authoritative Reference Documents
 - **Normative Orchestration Policy & Schemas:** [`core/ORCHESTRATOR_CORE.md`](core/ORCHESTRATOR_CORE.md)

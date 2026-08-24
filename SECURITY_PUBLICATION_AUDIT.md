@@ -1,5 +1,7 @@
 # Security & Personal Data Publication Audit
 
+> **HISTORICAL / ARCHIVED / NON-CURRENT RECORD:** This audit covers the older v1.0.0 publication package identified by SHA-256 `e4d93ffae22b96bf1194f01727812ffcdf77f40028f8d74ed61d40d962c1c71e`. It is retained as historical evidence only; no current `orchestrator-public` artifact is present in this record. The current accepted checkpoint is `c1cd71b8aa141a3bccf34c99ea797fbc734c1ff1`, tagged `rc3-runtime-accepted-2026-08-20` on `develop`.
+
 ## 1. Audit Scope & Methodology
 Every file included in the public distribution package was scanned for:
 - API Keys, Bearer Tokens, Passwords, or Private Credentials

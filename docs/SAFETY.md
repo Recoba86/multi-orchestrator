@@ -5,7 +5,7 @@
 ### A. Strict Disjoint Write Ownership
 - A worker assigned `write_allowed: true` receives an explicit list of `owned_files`.
 - The worker is strictly prohibited from touching `forbidden_files` or modifying unassigned project paths.
-- Parallel write assignments across disjoint file sets are safe; overlapping writes are prevented by Boss pre-planning.
+- The Controller refuses protocol requests with overlapping write assignments; this does not authorize or sandbox native Host execution.
 
 ### B. Independent Verification (`IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK`)
 - The agent that performed an implementation is strictly forbidden from acting as its verifier.
@@ -19,14 +19,14 @@
 
 ### D. Ambiguous Write State Fail-Closed
 - If a write-capable worker experiences a mid-turn drop, timeout, or 502 with uncertain mutation state (`AMBIGUOUS_EXECUTION_STATE`), automatic fallback is strictly forbidden.
-- The Boss halts the task and requires manual or factual state inspection before any further writes are authorized.
+- The Boss halts the task, and the Controller refuses further write-capable Host requests until manual or factual state inspection resolves the ambiguity.
 
 ---
 
 ## 2. Failure Classification Taxonomy
 Every failed attempt is classified into one of five deterministic buckets:
 
-1. **`SAFE_PRE_EXECUTION_FAILURE`**: Failure occurred before task execution or side effects began. Automatic provider fallback is ALLOWED.
+1. **`SAFE_PRE_EXECUTION_FAILURE`**: Evidence establishes that failure occurred before task side effects began. The Controller may submit a provider-fallback request.
 2. **`SAFE_READ_ONLY_PROVIDER_FAILURE`**: Transport or empty completion failure on read-only roles (`SCOUT`, `VERIFIER`, `PREMIUM_SECOND_OPINION`). Automatic fallback is ALLOWED.
 3. **`AMBIGUOUS_EXECUTION_STATE`**: Mid-turn timeout or network drop during tool execution on write-capable roles. Automatic fallback is FORBIDDEN.
 4. **`LOGIC_OR_TASK_FAILURE`**: Worker returned incorrect code, syntax errors, or failing tests. Automatic fallback is FORBIDDEN; triggers structured rework.
@@ -38,3 +38,7 @@ Every failed attempt is classified into one of five deterministic buckets:
 - Health is tracked per session in an in-memory ledger across three scopes: `ENDPOINT`, `CAPACITY_DOMAIN`, `TRANSPORT_DOMAIN`.
 - **Hard Quota Exhaustion (403/Usage Limit):** Suppresses the entire `CAPACITY_DOMAIN` for the remainder of the mission.
 - **Transient Errors (429, 500, 502, 503, 504, Timeouts):** Never open circuit breakers.
+
+## 4. Host Enforcement Boundary
+
+Fail-closed safety here means the Controller refuses protocol validation, Host request submission, fallback, or continuation. Native allocation and effective identity remain `HOST_EXTERNAL`; repository instructions do not intercept or authorize them. `PreToolUse Agent` is an optional guardrail, not a strict Host boundary. See the authoritative [Core Execution Boundary Model](../core/ORCHESTRATOR_CORE.md#execution-boundary-model-host_external--authoritative).

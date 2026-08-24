@@ -6,8 +6,8 @@ If you discover a potential security vulnerability or safety invariant bypass in
 Please do not open public issues for sensitive vulnerabilities.
 
 ## Safety Guarantees
-Multi Orchestrator is designed around strict fail-closed safety invariants:
-1. **No Self-Verification:** Implementers cannot verify their own pull requests or patches.
-2. **Strict Disjoint Ownership:** Parallel workers cannot write outside assigned paths.
-3. **Ambiguous Write Guard:** Uncertain mid-turn network drops halt automatic write retries.
-4. **Opus Read-Only Invariant:** Premium reviewer cannot mutate files or execute mutating commands.
+These are repository protocol guarantees enforced while the Controller validates and submits requests; native Host allocation, dispatch, and effective identity remain `HOST_EXTERNAL`:
+1. **No Self-Verification:** The Controller rejects a verification packet whose verifier matches the implementer.
+2. **Strict Disjoint Ownership:** The Controller submits write packets only with explicit, disjoint owned paths.
+3. **Ambiguous Write Guard:** The Controller refuses secondary write requests after an uncertain mid-turn state.
+4. **Opus Read-Only Invariant:** The Controller's premium-review packet specifies `READ_ONLY`, `write_ownership: NONE`, and no mutating operation.

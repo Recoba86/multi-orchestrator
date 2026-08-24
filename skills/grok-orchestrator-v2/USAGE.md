@@ -3,11 +3,12 @@
 ## Architecture
 
 - **Skill Invocation:** `grok-orchestrator-v2`
-- **Control Plane:** Root Controller (active session model) validates execution and logs Mission Trace.
-- **Decision Plane:** Dedicated Grok Boss (`nine-router/gcli/grok-4.6-high`, High effort) dynamically spawned and maintained via child follow-up tasks.
+- **Control Plane:** Root Controller validates protocol and submits native child requests to the external Host, then logs observable Mission Trace evidence.
+- **Decision Plane:** Dedicated Grok Boss request (`nine-router/gcli/grok-4.6-high`, High effort), maintained using the Host-returned child identity and follow-up tasks.
 - **Shared Policy Core:** `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` (RC3 Architecture)
-- **Topology:** Strict Hub-and-Spoke (`TOPOLOGY_HUB_AND_SPOKE_ONLY`). Subagents cannot spawn children or delegate.
+- **Topology:** Strict Hub-and-Spoke repository protocol (`TOPOLOGY_HUB_AND_SPOKE_ONLY`); this is not Host-wide native enforcement.
 - **Trace Persistence:** `~/.codex/orchestrator-traces/<mission_id>.json`
+- **Execution Boundary:** Native allocation and effective identity are `HOST_EXTERNAL`; see Core's authoritative Execution Boundary Model. `PreToolUse Agent` is optional, not a strict Host boundary.
 
 ## Role Chains (Option A — Quality-First)
 

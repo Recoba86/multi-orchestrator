@@ -1,15 +1,15 @@
 # Canonical Source Mapping & Transformation Log
 
-This document maps all public release artifacts in `orchestrator-public/` to their canonical local source files, recording their SHA-256 hashes and transformation status.
+This document maps public release artifacts in `orchestrator-public/` to their canonical local source files, recording their SHA-256 hashes and transformation status. The release table is separate from the current Dev candidate: Active Runtime and Stable remain unchanged until explicit promotion and deployment.
 
 | Public Path | Canonical Source Path | Canonical SHA-256 | Public SHA-256 | Transformation |
 |---|---|---|---|---|
-| `core/ORCHESTRATOR_CORE.md` | `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` | `ddaaaa2cd1ed7b6d290dddb32fb29e49a23da85a01011cc87ac7af9a462bdc79` | `ddaaaa2cd1ed7b6d290dddb32fb29e49a23da85a01011cc87ac7af9a462bdc79` | `BYTE_IDENTICAL` |
-| `skills/sol-luna-orchestrator-v2/SKILL.md` | `~/.agents/skills/sol-luna-orchestrator-v2/SKILL.md` | `d819b0ecc8713207af6cd29bdea437046456e9d1654b692b327258032e4058ac` | `bd932e5cb67c48e680d79defb01bcf159f9aca35648b7f447ff322a72cf11554` | `PATH_PORTABILIZED` |
-| `skills/sol-luna-orchestrator-v2/USAGE.md` | `~/.agents/skills/sol-luna-orchestrator-v2/USAGE.md` | `57449ca2251a7ea884235950c85418df7ce181b4d8ea28f714cbf082fa341289` | `57449ca2251a7ea884235950c85418df7ce181b4d8ea28f714cbf082fa341289` | `BYTE_IDENTICAL` |
+| `core/ORCHESTRATOR_CORE.md` | `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` | `ddaaaa2cd1ed7b6d290dddb32fb29e49a23da85a01011cc87ac7af9a462bdc79` | `ddaaaa2cd1ed7b6d290dddb32fb29e49a23da85a01011cc87ac7af9a462bdc79` | `RELEASE_RECORD_ONLY; CURRENT_DEV_CANDIDATE_DIFFERS` |
+| `skills/sol-luna-orchestrator-v2/SKILL.md` | `~/.agents/skills/sol-luna-orchestrator-v2/SKILL.md` | `d819b0ecc8713207af6cd29bdea437046456e9d1654b692b327258032e4058ac` | `bd932e5cb67c48e680d79defb01bcf159f9aca35648b7f447ff322a72cf11554` | `RELEASE_RECORD_PATH_PORTABILIZED; CURRENT_DEV_CANDIDATE_DIFFERS` |
+| `skills/sol-luna-orchestrator-v2/USAGE.md` | `~/.agents/skills/sol-luna-orchestrator-v2/USAGE.md` | `57449ca2251a7ea884235950c85418df7ce181b4d8ea28f714cbf082fa341289` | `57449ca2251a7ea884235950c85418df7ce181b4d8ea28f714cbf082fa341289` | `RELEASE_RECORD_ONLY; CURRENT_DEV_CANDIDATE_DIFFERS` |
 | `skills/sol-luna-orchestrator-v2/agents/openai.yaml` | `~/.agents/skills/sol-luna-orchestrator-v2/agents/openai.yaml` | `0d10b20042eff7d67575549c6b077c79be5079f6556d6e8ca6427bb59f20ac71` | `0d10b20042eff7d67575549c6b077c79be5079f6556d6e8ca6427bb59f20ac71` | `BYTE_IDENTICAL` |
-| `skills/grok-orchestrator-v2/SKILL.md` | `~/.agents/skills/grok-orchestrator-v2/SKILL.md` | `282beebb98ab2a5340f7b2f8602dfd9c3755ca888c08851641e735807bed80b4` | `688262bf5844ea0ea2910bcaca75f3136908a5691a507abee733ee8d514a951c` | `PATH_PORTABILIZED` |
-| `skills/grok-orchestrator-v2/USAGE.md` | `~/.agents/skills/grok-orchestrator-v2/USAGE.md` | `7cd1154042e993d36b41704b388f49f16f6c9e84723a6578b62997367afd9062` | `7cd1154042e993d36b41704b388f49f16f6c9e84723a6578b62997367afd9062` | `BYTE_IDENTICAL` |
+| `skills/grok-orchestrator-v2/SKILL.md` | `~/.agents/skills/grok-orchestrator-v2/SKILL.md` | `282beebb98ab2a5340f7b2f8602dfd9c3755ca888c08851641e735807bed80b4` | `688262bf5844ea0ea2910bcaca75f3136908a5691a507abee733ee8d514a951c` | `RELEASE_RECORD_PATH_PORTABILIZED; CURRENT_DEV_CANDIDATE_DIFFERS` |
+| `skills/grok-orchestrator-v2/USAGE.md` | `~/.agents/skills/grok-orchestrator-v2/USAGE.md` | `7cd1154042e993d36b41704b388f49f16f6c9e84723a6578b62997367afd9062` | `7cd1154042e993d36b41704b388f49f16f6c9e84723a6578b62997367afd9062` | `RELEASE_RECORD_ONLY; CURRENT_DEV_CANDIDATE_DIFFERS` |
 | `skills/grok-orchestrator-v2/agents/openai.yaml` | `~/.agents/skills/grok-orchestrator-v2/agents/openai.yaml` | `0bf8934876c932225c9aa83acfe4d5d0f95cf44a2a242f1ce05b32448ba3c8b9` | `0bf8934876c932225c9aa83acfe4d5d0f95cf44a2a242f1ce05b32448ba3c8b9` | `BYTE_IDENTICAL` |
 | `agents/luna_max_worker.toml` | `~/.codex/agents/luna_max_worker.toml` | `fd20660022f3ce2b45203fbc414c8cfe349fb7b23454de8f80fa17976d40deff` | `fd20660022f3ce2b45203fbc414c8cfe349fb7b23454de8f80fa17976d40deff` | `BYTE_IDENTICAL` |
 | `agents/router-model-nine-router-ag-claude-opus-4-6-thinking.toml` | `~/.codex/agents/router-model-nine-router-ag-claude-opus-4-6-thinking.toml` | `bc2b777c676606c1e351333d59a5f6eacadada51e6c4514dc50461b95b7e211d` | `bc2b777c676606c1e351333d59a5f6eacadada51e6c4514dc50461b95b7e211d` | `BYTE_IDENTICAL` |
@@ -21,3 +21,15 @@ This document maps all public release artifacts in `orchestrator-public/` to the
 | `agents/router-model-nine-router-stepplan-step-3-7-flash.toml` | `~/.codex/agents/router-model-nine-router-stepplan-step-3-7-flash.toml` | `80465720cd77f005597ed7740ab523add6976795d9cf32243d0d9b6e5984fb9e` | `80465720cd77f005597ed7740ab523add6976795d9cf32243d0d9b6e5984fb9e` | `BYTE_IDENTICAL` |
 | `config/sol-luna.config.example.toml` | `~/.codex/sol-luna.config.toml` | `3b46dbef03e64015a5a75289de25ed562b4d6e3db4c6ceeac0a066e5db81f96e` | `3b46dbef03e64015a5a75289de25ed562b4d6e3db4c6ceeac0a066e5db81f96e` | `CONFIG_TEMPLATED` |
 | `config/grok-v2.config.example.toml` | `~/.codex/grok-v2.config.toml` | `6cebc1484ee76185128af1213e50e07ac045ba5618d242c960e0baee4d311f91` | `6cebc1484ee76185128af1213e50e07ac045ba5618d242c960e0baee4d311f91` | `CONFIG_TEMPLATED` |
+
+## Current Dev Candidate Boundary
+
+The following Dev Markdown candidates are modified and not deployed. Active Runtime and Stable are byte-identical to each other but differ from these candidates; no parity claim is made for these paths.
+
+| Dev Candidate Path | Dev Candidate SHA-256 | Active Runtime SHA-256 | Stable SHA-256 | Status |
+|---|---|---|---|---|
+| `core/ORCHESTRATOR_CORE.md` | `e97d33b00d2765220d264cd3835f9e689f20feaa83d284b2d11fcbe546119a54` | `8eda3da425a9d7d653bdd56653e36adb699c2ce004fed9668a10f42a9380c4ef` | `8eda3da425a9d7d653bdd56653e36adb699c2ce004fed9668a10f42a9380c4ef` | `DEV_CANDIDATE_MODIFIED_UNDEPLOYED` |
+| `skills/sol-luna-orchestrator-v2/SKILL.md` | `24e9369456c6d70c8d09cdd611d183ca7a9aef53c7f0a047e8d20868e05ff379` | `90f13eebfdba596b66ac7567df4e4378f676f86bfd949d433d11aed3c3efceb0` | `90f13eebfdba596b66ac7567df4e4378f676f86bfd949d433d11aed3c3efceb0` | `DEV_CANDIDATE_MODIFIED_UNDEPLOYED` |
+| `skills/sol-luna-orchestrator-v2/USAGE.md` | `34e02fed2ad59ce34b59fbdcafd855d2d0e089e271469894539157e813a6a3af` | `eabb0f7c22c80abb82a1102369652b4f54e9c6c6691210bb9e5e6dc0e0b7d571` | `eabb0f7c22c80abb82a1102369652b4f54e9c6c6691210bb9e5e6dc0e0b7d571` | `DEV_CANDIDATE_MODIFIED_UNDEPLOYED` |
+| `skills/grok-orchestrator-v2/SKILL.md` | `3b680bd54ede0967e7350647eb837a796b1fcfe52f36bdb94b16a7af116fad85` | `dc0ca02fa793aeedd2ec1c1a1b0a6a8b8e02d19cd012f37f3a1b7d8857a32c81` | `dc0ca02fa793aeedd2ec1c1a1b0a6a8b8e02d19cd012f37f3a1b7d8857a32c81` | `DEV_CANDIDATE_MODIFIED_UNDEPLOYED` |
+| `skills/grok-orchestrator-v2/USAGE.md` | `0116a0a34a91be0648a01ec855c9dbbd21d04fd684346672fc235a8ac81d9c8d` | `b79e59587e5c0e77c653be1f638f5b9d9747f6d77c27051124e21a4e756d5cab` | `b79e59587e5c0e77c653be1f638f5b9d9747f6d77c27051124e21a4e756d5cab` | `DEV_CANDIDATE_MODIFIED_UNDEPLOYED` |

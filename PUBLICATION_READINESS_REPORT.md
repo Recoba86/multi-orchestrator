@@ -1,5 +1,7 @@
 # Publication Readiness Report — Multi Orchestrator (v1.0.0)
 
+> **HISTORICAL / ARCHIVED / NON-CURRENT RECORD:** This report covers the older v1.0.0 publication package identified by SHA-256 `e4d93ffae22b96bf1194f01727812ffcdf77f40028f8d74ed61d40d962c1c71e`. It is retained as historical evidence only; no current `orchestrator-public` artifact is present in this record. The current accepted checkpoint is `c1cd71b8aa141a3bccf34c99ea797fbc734c1ff1`, tagged `rc3-runtime-accepted-2026-08-20` on `develop`.
+
 ## 1. Executive Summary
 The locked local canonical release (SHA-256: `e4d93ffae22b96bf1194f01727812ffcdf77f40028f8d74ed61d40d962c1c71e`) has been sanitized, portabilized, and packaged into a standalone repository structure located at `$HOME/.../multi-orchestrator`.
 

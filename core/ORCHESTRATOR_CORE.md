@@ -1,6 +1,6 @@
 # Shared Orchestrator Core (Normative RC3 Architecture — Skill-Bound Dedicated Boss)
 
-This document defines the normative, engine-agnostic orchestration policy, skill-to-boss bindings, endpoint registry, role routing, packet contracts, failure-handling rules, mission-scoped health circuit breakers, implementer-aware independent verification, strict reviewer isolation, and runtime mission tracing for Release Candidate 3 (RC3).
+This document defines the normative, engine-agnostic orchestration policy, execution boundary, skill-to-boss bindings, endpoint registry, role routing, packet contracts, failure-handling rules, mission-scoped health circuit breakers, implementer-aware independent verification, strict reviewer isolation, and runtime mission tracing for Release Candidate 3 (RC3).
 
 ---
 
@@ -21,21 +21,30 @@ MISSION_IDENTITY:
 
 ### Core Isolation Invariants:
 1. **`NEW_MISSION_REQUIRES_FRESH_MISSION_ID`:** Every new invocation of an orchestrator Skill MUST generate a fresh, globally unique `mission_id`.
-2. **`NEW_MISSION_REQUIRES_FRESH_DEDICATED_BOSS`:** Every new mission MUST spawn a fresh Dedicated Boss child agent.
+2. **`NEW_MISSION_REQUIRES_FRESH_DEDICATED_BOSS`:** For every new mission, the Controller MUST submit a request for a fresh Dedicated Boss and MUST NOT continue until the external Host returns a distinct child identity.
 3. **`BOSS_REUSE_ACROSS_DISTINCT_MISSIONS_FORBIDDEN`:** A Boss child instance created for mission A MUST NOT be reused, referenced, or sent follow-up tasks in mission B.
 4. **`TARGET_WORKSPACE_BINDING_REQUIRED`:** The Controller MUST verify workspace preflight (`pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git rev-parse HEAD`, `git remote get-url origin`). If `workspace_root != git_toplevel`, the mission fails closed with `TARGET_WORKSPACE_MISMATCH`.
 5. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_ACTION`:** Every `BOSS_ACTION_PACKET` emitted by the Boss MUST match the `mission_id`, `workspace_root`, and `repository_identity` of the active `MISSION_IDENTITY`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
 6. **`MISSION_IDENTITY_MUST_MATCH_ON_EVERY_FOLLOWUP`:** Every `BOSS_FOLLOWUP_PACKET` delivered to the Boss MUST match `mission_id`, `workspace_root`, `repository_identity`, and `boss_child_id`. Mismatches fail closed with `MISSION_CONTEXT_MISMATCH`.
-7. **`MISSION_CONTEXT_MISMATCH_FAIL_CLOSED`:** Any context mismatch in mission ID, workspace root, repository identity, or Boss child ID blocks all execution immediately (no worker spawn, no provider fallback, no Controller takeover).
-8. **`FORK_TURNS_NONE_REQUIRED`:** Every orchestrated child spawn (`DEDICATED_BOSS`, `SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST explicitly specify `fork_turns="none"`. Omitting `fork_turns`, setting `fork_turns="all"`, or any value other than `"none"` is strictly invalid and fails closed as `FORK_TURNS_POLICY_VIOLATION`.
+7. **`MISSION_CONTEXT_MISMATCH_FAIL_CLOSED`:** Any context mismatch in mission ID, workspace root, repository identity, or Boss child ID makes protocol validation fail; the Controller MUST NOT submit that Host request, attempt provider fallback, or take over as Boss.
+8. **`FORK_TURNS_NONE_REQUIRED`:** Every Controller-submitted child request (`DEDICATED_BOSS`, `SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST explicitly request `fork_turns="none"`. Omitting it, setting `fork_turns="all"`, or using any other value is invalid and the Controller MUST refuse submission with `FORK_TURNS_POLICY_VIOLATION`.
 
+### Execution Boundary Model (`HOST_EXTERNAL`) — Authoritative
+
+The repository controls the orchestration protocol, not Codex native allocation:
+
+- **Repository / Controller boundary:** Core defines packet, policy, identity, routing and selection rules, and verifier-assignment rules; the Boss selects within those rules, and the Controller validates the selections, chooses whether to call the native spawn tool, submits the validated request, relays Host-returned results, and records trace/evidence. A fail-closed rule means the Controller refuses protocol validation, Host request submission, or further protocol continuation.
+- **`HOST_EXTERNAL` boundary:** The Codex Host owns native spawn and host-tool dispatch/interception, child allocation, final effective agent/model/effort identity, context construction, lifecycle, and admission across every native entry point. Repository Markdown, skills, traces, and validators do not execute, intercept, or authorize that allocation.
+- **Current guarantee:** A conforming Controller does not submit a request that fails Core validation and does not treat requested configuration as proven effective runtime identity. Returned child/session/transport evidence may prove an observed allocation after the fact.
+- **Explicit non-guarantees:** RC3 provides no repository guarantee of native Host tool interception or authorization. It does not prove pre-allocation Host authorization, effective-identity validation before allocation, or non-bypassability through native entry points outside this protocol. `PreToolUse Agent`, when available, is an optional guardrail only and is not the strict Host boundary.
+- **Future strict integration:** Strict enforcement requires an authoritative mandatory Host hook directly in every native spawn path, resolution of the final effective identity, fail-closed validation before allocation, coverage that cannot be bypassed through any entry point, and correlated request/allocation/session/transport runtime evidence.
 
 ---
 
 ## 1. System Topology & Delegation Invariants
 
 ### A. Strict Hub-and-Spoke Invariant (`TOPOLOGY_HUB_AND_SPOKE_ONLY`)
-The system strictly operates as a centralized Hub-and-Spoke topology:
+The repository protocol defines a centralized Hub-and-Spoke topology:
 ```text
       User / Developer
              │
@@ -43,13 +52,13 @@ The system strictly operates as a centralized Hub-and-Spoke topology:
        ROOT_CONTROLLER
  (Session Model / Control Plane)
              │
-             ▼ (spawns & relays)
+             ▼ (submits Host requests & relays)
       DEDICATED_BOSS
   (Skill-Bound: Sol High / Grok High)
              │ (decisions / actions)
              ▼
        ROOT_CONTROLLER
-             │ (validated execution)
+             │ (protocol-validated Host requests)
    ┌─────────┼─────────┬──────────────────────┬───────────────────────┐
    ▼         ▼         ▼                      ▼                       ▼
  Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
@@ -69,16 +78,17 @@ The system strictly operates as a centralized Hub-and-Spoke topology:
 ```
 
 ### B. Plane Separation & Invariants
-1. **DECISION PLANE (Dedicated Skill-Bound Boss):** The dedicated child agent bound to the exact model required by the invoked Skill (e.g. Grok for `grok-orchestrator-v2`, Sol for `sol-luna-orchestrator-v2`). Responsible for task understanding, decomposition, role selection, verifier assignment, rework decisions, and task completion evaluation.
-2. **CONTROL PLANE (Root Controller):** The model selected in the active session/UI. Responsible strictly for validating Boss actions against Core policy, executing exact agent spawns, relaying factual results without semantic mutation, managing mission trace persistence, and failing closed on violations.
+1. **DECISION PLANE (Dedicated Skill-Bound Boss):** The dedicated child requested with the model required by the invoked Skill (e.g. Grok for `grok-orchestrator-v2`, Sol for `sol-luna-orchestrator-v2`) and accepted only after matching Host-returned evidence. Responsible for task understanding, decomposition, role selection, verifier assignment, rework decisions, and task completion evaluation.
+2. **CONTROL PLANE (Root Controller):** The model selected in the active session/UI. Responsible strictly for validating Boss actions against Core policy, submitting protocol-validated requests to the external Host, relaying Host-returned factual results without semantic mutation, managing mission trace persistence, and refusing invalid submissions or continuation.
 3. **EXECUTION PLANE (Workers / Scouts / Verifiers / Reviewers):** Leaf execution subagents.
 
 ### C. Delegation Prohibitions
+These are repository protocol and agent-instruction obligations. The Controller enforces them by refusing nonconforming request submission or continuation; native Host-wide enforcement is outside this repository's current boundary.
 1. **Worker-to-Worker Delegation Forbidden:** Subagents MUST NOT delegate tasks to other subagents.
 2. **Subagent Spawning Forbidden:** Subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST NOT spawn child agents.
 3. **Peer Messaging Forbidden:** Subagents MUST NOT communicate directly with peer subagents.
 4. **Root Controller Must Not Self-Promote (`ROOT_CONTROLLER_MUST_NOT_SELF_PROMOTE`):** The Root Controller MUST NOT independently plan, decompose, choose models/efforts, choose verifiers, or decide task completion.
-5. **Dedicated Boss Mandatory (`DEDICATED_BOSS_REQUIRED`):** If the Skill-bound Boss cannot be bound on the required model/effort, the mission MUST fail closed with `BOSS_BINDING_UNAVAILABLE`. The Root Controller MUST NOT take over as Boss.
+5. **Dedicated Boss Mandatory (`DEDICATED_BOSS_REQUIRED`):** If a matching Boss request cannot be submitted or Host-returned evidence does not establish the required child, the Controller MUST refuse protocol continuation with `BOSS_BINDING_UNAVAILABLE`. The Root Controller MUST NOT take over as Boss.
 6. **Dedicated Boss Continuity Required (`DEDICATED_BOSS_CONTINUITY_REQUIRED`):** The same Boss child instance MUST be maintained across the entire mission via child follow-up tasks. Re-spawning a new Boss per turn is forbidden.
 7. **No Implementer Self-Verification:** The implementer of a task is strictly forbidden from verifying its own work.
 
@@ -268,7 +278,7 @@ role_chains:
 ## 5. Packet Architecture, Protocol & Validation (Normative Contracts)
 
 ### A. Context & Isolation Invariant (`EXPLICIT_PACKET_ONLY`)
-All delegated subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) execute with `fork_turns="none"`. Context isolation is 100% self-contained. The Boss MUST transport all required context through explicit packet fields and MUST NOT rely on inherited parent history.
+All Controller-submitted requests for delegated subagents (`SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) specify `fork_turns="none"`. The Boss MUST make each packet self-contained and MUST NOT rely on inherited parent history. Actual Host context construction remains `HOST_EXTERNAL` and requires runtime evidence.
 
 ### B. Private Reasoning Prohibition
 Packets MUST NOT require or transport private hidden reasoning or raw chain-of-thought traces. Communication across agents is strictly restricted to factual summaries, decisions, findings, evidence, assumptions, and required corrections.
@@ -313,7 +323,7 @@ BOSS_ACTION_PACKET:
   expected_result_contract: string        # Clear deliverable contract
 ```
 
-#### 3. CHILD_EXECUTION_RESULT (Controller Execution Evidence -> Controller Internal)
+#### 3. CHILD_EXECUTION_RESULT (Host-Returned Execution Evidence -> Controller Internal)
 ```yaml
 CHILD_EXECUTION_RESULT:
   packet_version: 1                       # Integer schema version
@@ -323,7 +333,7 @@ CHILD_EXECUTION_RESULT:
   action_id: string                       # Matches BOSS_ACTION_PACKET action_id
   logical_task_id: string                 # Matches logical_task_id
   child_id: string                        # Actual child agent task_name / ID
-  agent_type: string                      # Actual agent_type used for spawn
+  agent_type: string                      # Host-returned agent_type observation
   actual_model: string                    # Observable actual model or UNPROVEN
   actual_effort: string                   # Observable actual effort or UNPROVEN
   status: string                          # SUCCESS | FAILED | INTERRUPTED | ERROR
@@ -383,10 +393,10 @@ WORKER_TASK_PACKET:
 ```
 
 ### E. Worker Packet Validation Rule (`PACKET_INVALID`)
-Before spawning any worker, the Boss MUST validate that all mandatory fields are present and coherent:
+Before the Controller submits any worker request to the Host, the Boss and Controller MUST validate that all mandatory fields are present and coherent:
 - If `write_allowed: true` but `owned_files` is empty or missing $\rightarrow$ `PACKET_INVALID`.
 - If `objective`, `scope`, `role`, `expected_output`, or `done_when` is missing $\rightarrow$ `PACKET_INVALID`.
-- **Pre-Execution Invariant:** `PACKET_INVALID` occurs before worker dispatch. The Boss MUST NOT spawn the worker and MUST NOT trigger provider/endpoint fallback. Packet validation failure is a parent contract defect, not a provider failure.
+- **Pre-Execution Invariant:** `PACKET_INVALID` occurs before Controller Host request submission. The Controller MUST NOT submit the worker request or a provider/endpoint fallback request. Packet validation failure is a parent contract defect, not a provider failure; this invariant makes no claim about Host allocations initiated outside this protocol.
 
 ---
 
@@ -461,7 +471,7 @@ Worker Attempt
 IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK
 (verifier.endpoint_id != task.completed_by.endpoint_id)
 ```
-Every verifier must execute with `fork_turns="none"` and an independent `VERIFICATION_PACKET`.
+Every verifier request must specify `fork_turns="none"` and an independent `VERIFICATION_PACKET`; Host context isolation remains `HOST_EXTERNAL`.
 
 ### B. Authoritative Implementer-Aware Verifier Routing & Chains
 
@@ -589,7 +599,7 @@ actions:
     boss_requested: { endpoint: string, model: string, effort: string, fork_turns: string }
     controller_validation: { result: string, reason: string } # VALID | REJECTED
     identity_validation: { mission_match: boolean, workspace_match: boolean, repository_match: boolean, boss_match: boolean, result: string } # VALID | REJECTED
-    controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string, fork_turns: string }
+    controller_executed: { child_id: string, agent_type: string, actual_model: string, actual_effort: string, fork_turns: string } # Legacy key: records the submitted request and Host-returned observation, not Controller-owned native execution
     context_isolation: { packet_only: boolean, requested_fork_turns: string, inherited_parent_turns: string } # inherited_parent_turns is UNPROVEN if unobservable
     binding_match: boolean
     result: { status: string, mutation_state: string, errors: [string] }
@@ -619,7 +629,7 @@ If an actual runtime field cannot be verified from live events, it MUST be recor
 
 ## 8. Premium Second Opinion Contract (`OPUS_4_6_THINKING`)
 
-- **Normative Read-Only Invariant (`PREMIUM_SECOND_OPINION_READ_ONLY`):** `OPUS_4_6_THINKING` when invoked as `PREMIUM_SECOND_OPINION` is strictly **READ-ONLY**. It receives `fork_turns="none"`, `access: read-only`, and `write_ownership: none`.
+- **Normative Read-Only Invariant (`PREMIUM_SECOND_OPINION_READ_ONLY`):** `OPUS_4_6_THINKING` when invoked as `PREMIUM_SECOND_OPINION` is strictly **READ-ONLY**. The Controller's request specifies `fork_turns="none"`, `access: read-only`, and `write_ownership: none`; Host enforcement remains `HOST_EXTERNAL`.
 - **No Implementation Escape Hatch:** It MUST NOT modify, create, rename, or delete files, and MUST NOT execute mutating commands. If a defect or correction is required, findings return to the Boss to dispatch an authorized write worker under standard ownership rules.
 - **Not a Routine Member:** Opus is reserved exclusively for high-stakes decisions and is NOT a member of standard worker fallback chains.
 - **Invocations Allowed Exclusively Under:**
@@ -637,7 +647,7 @@ If an actual runtime field cannot be verified from live events, it MUST be recor
 
 Every failed attempt MUST be explicitly classified before determining next actions:
 
-1. **`SAFE_PRE_EXECUTION_FAILURE`**: Failure occurred before task side effects began. Automatic fallback is **ALLOWED** for all roles.
+1. **`SAFE_PRE_EXECUTION_FAILURE`**: Evidence establishes that failure occurred before task side effects began. The Controller may submit a fallback request for all roles; this classification does not prove native Host interception before allocation.
 2. **`SAFE_READ_ONLY_PROVIDER_FAILURE`**: Provider/transport failure (including 502 Bad Gateway / Empty Completion) on a **strictly read-only role (`SCOUT`, `VERIFIER`, `PREMIUM_SECOND_OPINION`)** where mutation evidence is `NONE`. Automatic fallback is **ALLOWED**.
 3. **`AMBIGUOUS_EXECUTION_STATE`**: Mid-turn timeouts, connection drops during tool execution, or 502 with unknown mutation state on write-capable roles (`STANDARD_WORKER`, `DEEP_WORKER`). Automatic fallback is **FORBIDDEN**. Hold ownership, inspect files, and alert parent.
 4. **`LOGIC_OR_TASK_FAILURE`**: Worker executed and returned but produced incorrect code, syntax errors, or failing tests. Automatic fallback is **FORBIDDEN**. Initiates structured rework.
@@ -664,7 +674,7 @@ Every failed attempt MUST be explicitly classified before determining next actio
 - **`BLOCKED`**: Unrecoverable defect reached after max rework attempts or unresolvable environment defect.
 
 ### B. Outcome & Reason Codes
-- `PACKET_INVALID`: Pre-dispatch schema error; worker not spawned; no provider fallback.
+- `PACKET_INVALID`: Pre-submission schema error; Controller submitted no worker or provider-fallback request.
 - `VERIFIER_CHAIN_EXHAUSTED`: Independent verification unavailable; task remains `INCOMPLETE`.
 - `AMBIGUOUS_EXECUTION_STATE`: Write-capable worker encountered mid-turn error; fail-closed.
 - `LOGIC_OR_TASK_FAILURE`: Defect detected by verifier/tests; leads to structured rework or `BLOCKED`.
@@ -678,5 +688,5 @@ Every failed attempt MUST be explicitly classified before determining next actio
 - **Wrapper Duties:**
   1. Define parent identity (`gpt-5.6-sol` / `nine-router/gcli/grok-4.6-high`) and config binding.
   2. Enforce fail-closed core loading (`ORCHESTRATION_CORE_CONFIGURATION_FAILURE`).
-  3. Dispatch subagents using Section 5 packet contracts with `fork_turns="none"`.
+  3. Submit protocol-validated subagent requests to the external Host using Section 5 packet contracts with requested `fork_turns="none"`.
 - **No Wrapper Deviations:** All routing, skip tables, packet schemas, and safety invariants live exclusively in this Shared Core.
