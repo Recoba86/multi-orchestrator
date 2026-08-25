@@ -43,30 +43,6 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "Mode: DRY RUN (no modifications will be made)"
 fi
 
-if [[ "${MIGRATE_MANIFEST_V1}" -eq 1 ]]; then
-  echo "Mode: EXPLICIT MANIFEST v1 -> v2 MIGRATION"
-  HELPER_ARGS=(migrate-manifest-v1 --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
-  if [[ "${DRY_RUN}" -eq 1 ]]; then
-    HELPER_ARGS+=(--dry-run)
-  fi
-  if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
-    echo "[ERROR] Manifest migration aborted." >&2
-    exit 1
-  fi
-  echo "Manifest migration completed without installing payload files."
-  exit 0
-fi
-
-HELPER_ARGS=(install --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
-if [[ "${DRY_RUN}" -eq 1 ]]; then
-  HELPER_ARGS+=(--dry-run)
-fi
-
-if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
-  echo "[ERROR] Installation aborted." >&2
-  exit 1
-fi
-
 # Install Unmanaged Config Files (only if absent); these examples and the
 # user-owned models config are intentionally not part of the ownership
 # manifest, so upgrade/uninstall never overwrites or removes them.
@@ -85,6 +61,47 @@ install_unmanaged_file() {
     echo "Unmanaged file exists, preserving: ${dest}"
   fi
 }
+
+if [[ "${MIGRATE_MANIFEST_V1}" -eq 1 ]]; then
+  echo "Mode: EXPLICIT MANIFEST v1 -> v2 MIGRATION"
+  missing_sources=0
+  for source in \
+    "${REPO_ROOT}/config/sol-luna.config.example.toml" \
+    "${REPO_ROOT}/config/grok-v2.config.example.toml" \
+    "${REPO_ROOT}/config/models.yaml"; do
+    if [[ ! -f "${source}" ]]; then
+      echo "[ERROR] Missing unmanaged config source: ${source}" >&2
+      missing_sources=1
+    fi
+  done
+  if [[ "${missing_sources}" -ne 0 ]]; then
+    echo "[ERROR] Manifest migration aborted before mutation." >&2
+    exit 1
+  fi
+  HELPER_ARGS=(migrate-manifest-v1 --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    HELPER_ARGS+=(--dry-run)
+  fi
+  if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
+    echo "[ERROR] Manifest migration aborted." >&2
+    exit 1
+  fi
+  install_unmanaged_file "${REPO_ROOT}/config/sol-luna.config.example.toml" "${CODEX_DIR}/sol-luna.config.toml"
+  install_unmanaged_file "${REPO_ROOT}/config/grok-v2.config.example.toml" "${CODEX_DIR}/grok-v2.config.toml"
+  install_unmanaged_file "${REPO_ROOT}/config/models.yaml" "${TARGET_HOME}/.agents/config/models.yaml"
+  echo "Manifest migration and payload reconciliation completed."
+  exit 0
+fi
+
+HELPER_ARGS=(install --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  HELPER_ARGS+=(--dry-run)
+fi
+
+if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
+  echo "[ERROR] Installation aborted." >&2
+  exit 1
+fi
 
 install_unmanaged_file "${REPO_ROOT}/config/sol-luna.config.example.toml" "${CODEX_DIR}/sol-luna.config.toml"
 install_unmanaged_file "${REPO_ROOT}/config/grok-v2.config.example.toml" "${CODEX_DIR}/grok-v2.config.toml"

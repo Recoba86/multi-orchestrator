@@ -8,6 +8,7 @@ manifest must fail closed before any payload or user file is changed.
 from __future__ import annotations
 
 import hashlib
+from unittest import mock
 import json
 import os
 from pathlib import Path
@@ -520,7 +521,7 @@ class InstallerLifecycleTests(unittest.TestCase):
                 "mission-trace not removed",
             )
 
-    def test_migrate_v1_explicitly_claims_clean_files_and_records_omissions(self):
+    def test_migrate_v1_explicitly_claims_clean_files_repairs_missing_and_records_customizations(self):
         with tempfile.TemporaryDirectory(prefix="installer-migrate-red-") as raw_home:
             home = Path(raw_home)
             self._install(home)
@@ -533,7 +534,9 @@ class InstallerLifecycleTests(unittest.TestCase):
                 key for key in entries if key.endswith("router-model-custom-qwen3-8-27b.toml")
             )
             modified_path = Path(modified_key)
-            modified_path.write_bytes(b"user-owned router declaration\n")
+            modified_path.write_bytes(
+                b"# user-owned router customization\n" + modified_path.read_bytes()
+            )
             missing_path = Path(missing_key)
             missing_path.unlink()
             before_modified = modified_path.read_bytes()
@@ -554,20 +557,50 @@ class InstallerLifecycleTests(unittest.TestCase):
             modified_rel = str(modified_path.resolve().relative_to(home.resolve()))
             missing_rel = str(missing_path.resolve().relative_to(home.resolve()))
             self.assertIn(modified_rel, omissions)
-            self.assertIn(missing_rel, omissions)
+            self.assertNotIn(missing_rel, omissions)
             self.assertNotIn(modified_key, managed)
-            self.assertNotIn(missing_key, managed)
             self.assertEqual(modified_path.read_bytes(), before_modified)
-            self.assertFalse(missing_path.exists())
+            self.assertEqual(missing_path.read_bytes(), (DEV_ROOT / "agents" / missing_path.name).read_bytes())
             self.assertEqual(omissions[modified_rel]["state"], "modified")
             self.assertEqual(
                 omissions[modified_rel]["migration_sha256"],
                 hashlib.sha256(before_modified).hexdigest(),
             )
-            self.assertEqual(omissions[missing_rel]["state"], "missing")
-            self.assertIsNone(omissions[missing_rel]["migration_sha256"])
+            self.assertIn(missing_key, managed)
             verify = self._run(VERIFY, home)
             self.assertEqual(verify.returncode, 0, self._message("verify migrated omissions", verify))
+
+    def test_v1_omitted_existing_unknown_payload_is_unknown_conflict_for_apply_and_dry_run(self):
+        """An omitted v1 destination with unknown bytes must fail closed."""
+        for dry_run in (False, True):
+            with self.subTest(dry_run=dry_run):
+                with tempfile.TemporaryDirectory(prefix="installer-migrate-unknown-conflict-red-") as raw_home:
+                    home = Path(raw_home)
+                    self._install(home)
+                    v1 = self._write_v1_manifest(home)
+                    omitted_key = next(
+                        key for key in v1["installed_files"] if key.endswith("ORCHESTRATOR_CORE.md")
+                    )
+                    destination = Path(omitted_key)
+                    v1["installed_files"].pop(omitted_key)
+                    destination.unlink()
+                    unknown = b"unknown pre-existing bytes\n"
+                    destination.write_bytes(unknown)
+                    self._write_manifest(home, v1)
+                    before_manifest = self._manifest_path(home).read_bytes()
+                    before_snapshot = self._snapshot(home)
+
+                    result = self._migrate(home, dry_run=dry_run)
+
+                    self.assertNotEqual(result.returncode, 0, self._message("unknown conflict migration", result))
+                    self.assertRegex(
+                        f"{result.stdout}\n{result.stderr}",
+                        r"(?i)unknown[ _-]*conflict|ambiguous",
+                    )
+                    self.assertEqual(destination.read_bytes(), unknown)
+                    self.assertEqual(self._manifest_path(home).read_bytes(), before_manifest)
+                    self.assertEqual(self._snapshot(home), before_snapshot)
+                    self.assertFalse((home / ".multi-orchestrator-backups").exists())
 
     def test_v1_requires_explicit_migration_and_normal_lifecycle_is_unchanged(self):
         for script in (INSTALL, VERIFY, UNINSTALL):
@@ -633,6 +666,212 @@ class InstallerLifecycleTests(unittest.TestCase):
             self.assertNotEqual(repeated.returncode, 0, self._message("repeated migration", repeated))
             self.assertEqual(self._snapshot(home), after_first)
             self.assertNotEqual(before, after_first)
+
+    def test_migration_fixture_preserves_5_custom_agents_repairs_2_missing_and_claims_1_pristine(self):
+        """The bounded migration classifies the explicit 8-agent legacy set once."""
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-8-5-2-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            # The shipped declarations are target-home absolute paths; select
+            # only the eight relevant legacy agent declarations explicitly.
+            agent_entries = [
+                key for key in v1["installed_files"] if "/.codex/agents/" in key and key.endswith(".toml")
+            ]
+            self.assertEqual(len(agent_entries), 8)
+            custom = agent_entries[:5]
+            missing = agent_entries[5:7]
+            pristine = agent_entries[7]
+            before_custom = {}
+            for index, key in enumerate(custom):
+                path = Path(key)
+                before_custom[key] = (f"# custom declaration {index}\n" + path.read_text(encoding="utf-8")).encode()
+                path.write_bytes(before_custom[key])
+            for key in missing:
+                Path(key).unlink()
+            self._write_manifest(home, v1)
+
+            result = self._migrate(home)
+            self.assertEqual(result.returncode, 0, self._message("migration", result))
+            migrated = self._read_manifest(home)
+            managed = self._entries(migrated)
+            provenance = migrated.get("migration_provenance")
+            self.assertIsInstance(provenance, dict)
+            self.assertEqual(provenance.get("from_schema_version"), 1)
+            classifications = provenance.get("classifications")
+            self.assertIsInstance(classifications, dict)
+            self.assertEqual(len(classifications), len(v1["installed_files"]))
+
+            for key, original in before_custom.items():
+                self.assertEqual(Path(key).read_bytes(), original)
+                self.assertNotIn(key, managed)
+                self.assertEqual(classifications[key], "preserved_customized")
+            for key in missing:
+                path = Path(key)
+                self.assertTrue(path.is_file(), f"missing legacy declaration not restored: {path}")
+                self.assertEqual(
+                    path.read_bytes(),
+                    (DEV_ROOT / "agents" / path.name).read_bytes(),
+                )
+                self.assertIn(key, managed)
+                self.assertEqual(classifications[key], "repaired_missing")
+            self.assertIn(pristine, managed)
+            self.assertEqual(classifications[pristine], "pristine")
+
+    def test_modified_non_agent_payload_blocks_migration_before_any_mutation(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-core-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            core_key = next(key for key in v1["installed_files"] if key.endswith("ORCHESTRATOR_CORE.md"))
+            core = Path(core_key)
+            core.write_bytes(b"user changed core\n")
+            self._write_manifest(home, v1)
+            before = self._snapshot(home)
+            result = self._migrate(home)
+            self.assertNotEqual(result.returncode, 0, self._message("unsafe core migration", result))
+            self.assertEqual(self._snapshot(home), before)
+            self.assertEqual(self._read_manifest(home).get("version"), 1)
+
+    def test_migration_preserves_validated_legacy_backup_for_future_uninstall(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-backup-red-") as raw_home:
+            home = Path(raw_home)
+            original = b"pre-v1 user core bytes\n"
+            destination = home / ".agents" / "orchestrator-shared" / "ORCHESTRATOR_CORE.md"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(original)
+            self._install(home)
+            v2 = self._read_manifest(home)
+            key, info, _ = self._first_entry(home, v2)
+            # Move the proven v1 backup into a legacy target-home location and
+            # retain only its byte hash in the v1 manifest.
+            backup = Path(info["backup_path"])
+            legacy_backup = home / "legacy-v1-backups" / "core.bak"
+            legacy_backup.parent.mkdir(parents=True, exist_ok=True)
+            legacy_backup.write_bytes(backup.read_bytes())
+            backup.unlink()
+            v1 = {
+                "version": 1,
+                "installed_files": {
+                    key: (
+                        {
+                            "installed_sha256": info["sha256"],
+                            "backup_path": str(legacy_backup),
+                            "backup_sha256": hashlib.sha256(original).hexdigest(),
+                        }
+                        if Path(key).resolve() == destination.resolve()
+                        else {
+                            "installed_sha256": info["sha256"],
+                            "backup_path": None,
+                        }
+                    )
+                    for key, info in self._entries(v2).items()
+                },
+            }
+            self._write_manifest(home, v1)
+            self.assertEqual(self._migrate(home).returncode, 0)
+            migrated = self._read_manifest(home)
+            migrated_info = migrated["installed_files"][key]
+            relocated = migrated_info.get("backup_path")
+            self.assertIsNotNone(relocated)
+            self.assertTrue(
+                    Path(relocated).resolve().is_relative_to(
+                    (home / ".multi-orchestrator-backups").resolve()
+                )
+            )
+            self.assertEqual(Path(relocated).read_bytes(), original)
+            self.assertEqual(self._run(UNINSTALL, home).returncode, 0)
+            self.assertEqual(destination.read_bytes(), original)
+
+    def test_migration_dry_run_is_byte_identical_with_repairs_planned(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-dry-run-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            missing_key = next(key for key in v1["installed_files"] if "/.codex/agents/" in key)
+            Path(missing_key).unlink()
+            self._write_manifest(home, v1)
+            before = self._snapshot(home)
+            result = self._migrate(home, dry_run=True)
+            self.assertEqual(result.returncode, 0, self._message("migration dry-run", result))
+            self.assertEqual(self._snapshot(home), before)
+            self.assertEqual(self._read_manifest(home).get("version"), 1)
+            self.assertIn("repaired_missing", result.stdout)
+
+    def test_controlled_copy_failure_rolls_back_exact_v1_manifest_and_payload(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-rollback-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            missing_key = next(key for key in v1["installed_files"] if "/.codex/agents/" in key)
+            Path(missing_key).unlink()
+            self._write_manifest(home, v1)
+            manifest_before = self._manifest_path(home).read_bytes()
+            snapshot_before = self._snapshot(home)
+
+            from scripts import installer_lifecycle
+
+            real_copy2 = installer_lifecycle.shutil.copy2
+            calls = {"count": 0}
+
+            def fail_on_second_copy(source, destination, *args, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    raise OSError("synthetic controlled copy failure")
+                return real_copy2(source, destination, *args, **kwargs)
+
+            with mock.patch.object(installer_lifecycle.shutil, "copy2", fail_on_second_copy):
+                with self.assertRaises(OSError):
+                    installer_lifecycle.cmd_migrate_manifest_v1(
+                        str(DEV_ROOT),
+                        str(home),
+                        str(self._manifest_path(home)),
+                        False,
+                    )
+            self.assertEqual(self._manifest_path(home).read_bytes(), manifest_before)
+            self.assertEqual(self._snapshot(home), snapshot_before)
+
+    def test_migration_provenance_is_schema_validated_by_all_lifecycle_commands(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-provenance-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            custom_key = next(key for key in v1["installed_files"] if "/.codex/agents/" in key)
+            Path(custom_key).write_bytes(b"# valid custom declaration marker\n" + Path(custom_key).read_bytes())
+            self._write_manifest(home, v1)
+            self.assertEqual(self._migrate(home).returncode, 0)
+            manifest = self._read_manifest(home)
+            manifest["migration_provenance"]["classifications"].pop(custom_key)
+            self._write_manifest(home, manifest)
+            before = self._snapshot(home)
+            for script in (INSTALL, VERIFY, UNINSTALL):
+                with self.subTest(script=script.name):
+                    result = self._run(script, home)
+                    self.assertNotEqual(result.returncode, 0, self._message(script.name, result))
+                    self.assertEqual(self._snapshot(home), before)
+
+    def test_migration_rejects_unknown_or_reserved_legacy_paths_before_mutation(self):
+        for kind in ("unknown", "reserved"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory(prefix="installer-migrate-conflict-red-") as raw_home:
+                    home = Path(raw_home)
+                    self._install(home)
+                    v1 = self._write_v1_manifest(home)
+                    source_info = next(iter(v1["installed_files"].values()))
+                    if kind == "unknown":
+                        conflict = home / ".codex" / "agents" / "not-shipped.toml"
+                        v1["installed_files"][str(conflict)] = {
+                            "installed_sha256": source_info["installed_sha256"],
+                            "backup_path": None,
+                        }
+                    else:
+                        reserved = home / ".agents" / "config" / "models.yaml"
+                        v1["installed_files"][next(iter(v1["installed_files"]))]["backup_path"] = str(reserved)
+                    self._write_manifest(home, v1)
+                    before = self._snapshot(home)
+                    result = self._migrate(home)
+                    self.assertNotEqual(result.returncode, 0, self._message("unsafe migration", result))
+                    self.assertEqual(self._snapshot(home), before)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ and then executes the real shell verifier.
 """
 
 from pathlib import Path
+import json
 import subprocess
 import tempfile
 import unittest
@@ -124,6 +125,18 @@ class VerifyBlackBoxTests(unittest.TestCase):
     def _overwrite(self, path, contents):
         self.assertTrue(path.is_file(), f"fixture missing before overwrite: {path}")
         path.write_text(contents, encoding="utf-8")
+
+    def _write_v1_manifest(self, target_home):
+        path = target_home / ".agents" / ".multi-orchestrator-install-manifest.json"
+        v2 = json.loads(path.read_text(encoding="utf-8"))
+        v1 = {
+            "version": 1,
+            "installed_files": {
+                key: {"installed_sha256": info["sha256"], "backup_path": None}
+                for key, info in v2["installed_files"].items()
+            },
+        }
+        path.write_text(json.dumps(v1, indent=2) + "\n", encoding="utf-8")
 
     def _rejected_case(self, label, mutate):
         with tempfile.TemporaryDirectory(prefix="verify-red-") as raw_home:
@@ -302,6 +315,61 @@ class VerifyBlackBoxTests(unittest.TestCase):
             doctor.write_text("# tampered managed CLI\n", encoding="utf-8")
 
         self._rejected_case("tampered managed Doctor CLI", mutate)
+
+    def test_malformed_preserved_user_agent_is_reported_without_rewrite(self):
+        with tempfile.TemporaryDirectory(prefix="verify-preserved-agent-red-") as raw_home:
+            target_home = Path(raw_home)
+            self._install(target_home)
+            self._write_v1_manifest(target_home)
+            path = self._agent_path(target_home)
+            malformed = b'name = "unterminated\n'
+            path.write_bytes(malformed)
+            migrate = subprocess.run(
+                [str(INSTALL), "--migrate-manifest-v1", "--target-home", str(target_home)],
+                cwd=DEV_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(migrate.returncode, 0, self._result_message("migration", migrate))
+            before = path.read_bytes()
+            result = self._verify(target_home)
+            self.assertNotEqual(result.returncode, 0, self._result_message("verify", result))
+            self.assertIn("TOML parse error", result.stderr)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_manifest_v1_migration_seeds_missing_unmanaged_configs_before_verify(self):
+        with tempfile.TemporaryDirectory(prefix="verify-migration-unmanaged-red-") as raw_home:
+            target_home = Path(raw_home)
+            self._install(target_home)
+            self._write_v1_manifest(target_home)
+
+            destinations = (
+                target_home / ".agents" / "config" / "models.yaml",
+                target_home / ".codex" / "sol-luna.config.toml",
+                target_home / ".codex" / "grok-v2.config.toml",
+            )
+            sources = (
+                DEV_ROOT / "config" / "models.yaml",
+                DEV_ROOT / "config" / "sol-luna.config.example.toml",
+                DEV_ROOT / "config" / "grok-v2.config.example.toml",
+            )
+            for destination in destinations:
+                self.assertTrue(destination.is_file(), f"fixture missing before removal: {destination}")
+                destination.unlink()
+
+            migrate = subprocess.run(
+                [str(INSTALL), "--migrate-manifest-v1", "--target-home", str(target_home)],
+                cwd=DEV_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(migrate.returncode, 0, self._result_message("migration", migrate))
+            for destination, source in zip(destinations, sources):
+                self.assertTrue(destination.is_file(), f"migration did not seed {destination}")
+                self.assertEqual(destination.read_bytes(), source.read_bytes())
+
+            verify = self._verify(target_home)
+            self.assertEqual(verify.returncode, 0, self._result_message("verify", verify))
 
 
 if __name__ == "__main__":

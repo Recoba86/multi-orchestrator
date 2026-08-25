@@ -24,24 +24,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST_FILE="${TARGET_HOME}/.agents/.multi-orchestrator-install-manifest.json"
 LIFECYCLE_HELPER="${SCRIPT_DIR}/installer_lifecycle.py"
 
-is_migration_omission() {
-  python3 - "${MANIFEST_FILE}" "${TARGET_HOME}" "$1" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-try:
-    manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    target = Path(sys.argv[2]).resolve()
-    candidate = Path(sys.argv[3]).resolve()
-    relative = str(candidate.relative_to(target))
-    omissions = manifest.get("migration_omissions", {})
-    print("1" if isinstance(omissions, dict) and relative in omissions else "0")
-except (OSError, ValueError, json.JSONDecodeError):
-    print("0")
-PY
-}
-
 # Fail closed on any malformed, ambiguous, or escaping manifest before any
 # other verification or potential mutation.
 if [[ -f "${MANIFEST_FILE}" ]]; then
@@ -55,10 +37,6 @@ FAILED=0
 
 assert_file_exists() {
   local file="$1"
-  if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
-    echo "[SKIP] Explicit migration omission: ${file}"
-    return 0
-  fi
   if [[ ! -f "${file}" ]]; then
     echo "[FAIL] Missing file: ${file}" >&2
     FAILED=1
@@ -71,10 +49,6 @@ assert_contains() {
   local file="$1"
   local pattern="$2"
   local desc="$3"
-  if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
-    echo "[SKIP] Explicit migration omission: ${desc}"
-    return 0
-  fi
   if ! grep -qF "${pattern}" "${file}" 2>/dev/null; then
     echo "[FAIL] ${desc} (Missing '${pattern}' in ${file})" >&2
     FAILED=1
@@ -87,10 +61,6 @@ assert_not_contains() {
   local file="$1"
   local pattern="$2"
   local desc="$3"
-  if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
-    echo "[SKIP] Explicit migration omission: ${desc}"
-    return 0
-  fi
   if grep -qF "${pattern}" "${file}" 2>/dev/null; then
     echo "[FAIL] ${desc} (Unexpected '${pattern}' in ${file})" >&2
     FAILED=1
@@ -139,13 +109,10 @@ assert_file_exists "${MODELS_CONFIG}"
 
 # 1c. Installed Commands Execute Read-Only
 echo "--- Verifying Installed Commands Execute Read-Only ---"
-if [[ "$(is_migration_omission "${DOCTOR}")" == "1" ]]; then
-  echo "[SKIP] Explicit migration omission: ${DOCTOR}"
-else
-  if [[ ! -x "${DOCTOR}" ]]; then
+if [[ ! -x "${DOCTOR}" ]]; then
     echo "[FAIL] Doctor is not executable: ${DOCTOR}" >&2
     FAILED=1
-  else
+else
     echo "[PASS] Doctor is executable"
     if ! PYTHONDONTWRITEBYTECODE=1 "${DOCTOR}" --config "${MODELS_CONFIG}" --target-home "${TARGET_HOME}" >/dev/null 2>&1; then
       echo "[FAIL] Installed Doctor failed read-only execution" >&2
@@ -153,16 +120,12 @@ else
     else
       echo "[PASS] Installed Doctor executed read-only"
     fi
-  fi
 fi
 
-if [[ "$(is_migration_omission "${CONFIGURE_MODELS}")" == "1" ]]; then
-  echo "[SKIP] Explicit migration omission: ${CONFIGURE_MODELS}"
-else
-  if [[ ! -x "${CONFIGURE_MODELS}" ]]; then
+if [[ ! -x "${CONFIGURE_MODELS}" ]]; then
     echo "[FAIL] configure-models is not executable: ${CONFIGURE_MODELS}" >&2
     FAILED=1
-  else
+else
     echo "[PASS] configure-models is executable"
     if ! PYTHONDONTWRITEBYTECODE=1 "${CONFIGURE_MODELS}" --config "${MODELS_CONFIG}" >/dev/null 2>&1; then
       echo "[FAIL] Installed configure-models failed read-only execution" >&2
@@ -170,7 +133,6 @@ else
     else
       echo "[PASS] configure-models executed read-only"
     fi
-  fi
 fi
 
 # 2. Verify Every Shipped Leaf Agent Declaration
@@ -251,22 +213,6 @@ agent_paths = sys.argv[2:10]
 config_paths = sys.argv[10:12]
 manifest_path = sys.argv[12] if len(sys.argv) > 12 else ""
 target_home = Path(sys.argv[13]).resolve() if len(sys.argv) > 13 else None
-omitted_paths = set()
-if manifest_path and target_home is not None:
-    try:
-        raw_manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
-        omitted_paths = set(raw_manifest.get("migration_omissions", {}))
-    except (OSError, ValueError, json.JSONDecodeError):
-        omitted_paths = set()
-
-def is_omitted(path):
-    if target_home is None:
-        return False
-    try:
-        return str(Path(path).resolve().relative_to(target_home)) in omitted_paths
-    except ValueError:
-        return False
-
 toml_failures = []
 
 def toml_fail(path, reason):
@@ -278,9 +224,6 @@ def require(path, condition, reason):
         toml_fail(path, reason)
 
 def load_toml(path):
-    if is_omitted(path):
-        print(f"[SKIP] Explicit migration omission: {path}")
-        return None
     try:
         with open(path, "rb") as f:
             return tomllib.load(f)
@@ -339,10 +282,6 @@ safety_phrases = (
     "Return your result only to the parent Boss.",
     "A parent request to spawn another agent does not override this restriction.",
 )
-
-if is_omitted(core_path):
-    print(f"[SKIP] Explicit migration omission: {core_path}")
-    sys.exit(0)
 
 agent_data = {}
 for path in agent_paths:

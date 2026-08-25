@@ -58,6 +58,10 @@ EXECUTABLE_PAYLOAD_NAMES = ("mission-trace", "doctor", "configure-models")
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 MIGRATION_OMISSION_STATES = frozenset(("modified", "missing"))
+MIGRATION_CLASSIFICATIONS = frozenset(
+    ("preserved_customized", "pristine", "repaired_missing", "new_payload")
+)
+MIGRATION_PROVENANCE_SCHEMA = 1
 
 
 class ManifestError(Exception):
@@ -274,6 +278,85 @@ def _validate_migration_omissions(
     return normalized
 
 
+def _validate_migration_provenance(
+    target: Path,
+    root: Path,
+    installed: dict,
+    omissions: dict,
+    provenance,
+) -> dict | None:
+    """Validate the audit trail without making it an ownership source."""
+    if provenance is None:
+        return None
+    if not isinstance(provenance, dict):
+        raise ManifestError("migration_provenance must be an object")
+    if provenance.get("schema_version") != MIGRATION_PROVENANCE_SCHEMA:
+        raise ManifestError("unsupported migration_provenance schema_version")
+    if provenance.get("from_schema_version") != 1:
+        raise ManifestError("migration_provenance must identify v1 source")
+    legacy_digest = provenance.get("legacy_manifest_sha256")
+    if not isinstance(legacy_digest, str) or not _SHA_RE.fullmatch(legacy_digest):
+        raise ManifestError("migration_provenance legacy manifest hash is invalid")
+    classifications = provenance.get("classifications")
+    if not isinstance(classifications, dict) or not classifications:
+        raise ManifestError("migration_provenance classifications must be a non-empty object")
+
+    installed_set = set(installed)
+    omission_set = {
+        str((target / rel).resolve()) for rel in omissions
+    }
+    normalized = {}
+    counts = {state: 0 for state in MIGRATION_CLASSIFICATIONS}
+    for raw_path, state in classifications.items():
+        if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+            raise ManifestError("migration provenance paths must be absolute")
+        path = Path(raw_path)
+        _reject_symlink_path(target, path, "migration provenance path")
+        path = path.resolve()
+        if not path.is_relative_to(target) or not path.is_relative_to(root):
+            raise ManifestError(f"migration provenance path escapes managed root: {raw_path}")
+        canonical = str(path)
+        if canonical != raw_path:
+            raise ManifestError(f"migration provenance path is not canonical: {raw_path}")
+        if state not in MIGRATION_CLASSIFICATIONS:
+            raise ManifestError(f"unknown migration classification for {raw_path}")
+        if state == "preserved_customized":
+            if canonical not in omission_set:
+                raise ManifestError(
+                    f"preserved classification lacks migration omission: {raw_path}"
+                )
+        elif canonical not in installed_set:
+            raise ManifestError(f"managed migration classification lacks installed entry: {raw_path}")
+        normalized[canonical] = state
+        counts[state] += 1
+
+    expected_paths = installed_set | omission_set
+    if set(normalized) != expected_paths:
+        missing = sorted(expected_paths - set(normalized))
+        extra = sorted(set(normalized) - expected_paths)
+        raise ManifestError(
+            "migration_provenance must classify each installed or preserved path exactly once "
+            f"(missing={missing!r}, extra={extra!r})"
+        )
+
+    declared_counts = provenance.get("counts")
+    if declared_counts is not None:
+        if not isinstance(declared_counts, dict):
+            raise ManifestError("migration_provenance counts must be an object")
+        for state, count in counts.items():
+            if declared_counts.get(state) != count:
+                raise ManifestError(f"migration_provenance count mismatch for {state}")
+        if set(declared_counts) - set(counts):
+            raise ManifestError("migration_provenance has unknown count keys")
+    return {
+        "schema_version": MIGRATION_PROVENANCE_SCHEMA,
+        "from_schema_version": 1,
+        "legacy_manifest_sha256": legacy_digest.lower(),
+        "classifications": normalized,
+        "counts": counts,
+    }
+
+
 def _validate_v2_manifest(manifest, target_home: str, manifest_path: str):
     """Return (managed_root, normalized_entries, normalized_omissions)."""
     if not isinstance(manifest, dict):
@@ -335,17 +418,27 @@ def _validate_v2_manifest(manifest, target_home: str, manifest_path: str):
         manifest.get("migration_omissions"),
         manifest_path,
     )
-    return root, normalized, omissions
+    provenance = _validate_migration_provenance(
+        target,
+        root,
+        normalized,
+        omissions,
+        manifest.get("migration_provenance"),
+    )
+    return root, normalized, omissions, provenance
 
 
 def validate_manifest(manifest, target_home: str, manifest_path: str):
     """Return (managed_root, normalized_entries) or raise ManifestError."""
-    root, entries, _omissions = _validate_v2_manifest(manifest, target_home, manifest_path)
+    root, entries, _omissions, _provenance = _validate_v2_manifest(
+        manifest, target_home, manifest_path
+    )
     return root, entries
 
 
 def build_payload(repo_root: str, target_home: str):
     target = Path(target_home).resolve()
+    source_root = Path(repo_root).resolve()
     payload = []
 
     def _dest(dest_rel: str) -> str:
@@ -357,13 +450,19 @@ def build_payload(repo_root: str, target_home: str):
         return str(resolved)
 
     for src_rel, dest_rel in PAYLOAD:
-        payload.append((os.path.join(repo_root, src_rel), _dest(dest_rel)))
+        source = Path(repo_root) / src_rel
+        if source.is_symlink() or not source.resolve().is_relative_to(source_root):
+            raise ManifestError(f"payload source escapes repository root: {source}")
+        payload.append((str(source), _dest(dest_rel)))
     agents_dir = os.path.join(repo_root, "agents")
     if os.path.isdir(agents_dir):
         for name in sorted(os.listdir(agents_dir)):
             if name.endswith(".toml"):
+                source = Path(agents_dir) / name
+                if source.is_symlink() or not source.resolve().is_relative_to(source_root):
+                    raise ManifestError(f"payload source escapes repository root: {source}")
                 payload.append(
-                    (os.path.join(agents_dir, name), _dest(os.path.join(".codex", "agents", name)))
+                    (str(source), _dest(os.path.join(".codex", "agents", name)))
                 )
     return payload
 
@@ -392,6 +491,9 @@ def _legacy_manifest_entries(
     manifest_canon = Path(manifest_path).resolve()
     normalized = {}
     source_keys = {}
+    backup_owners = {}
+    reserved = {str((target / rel).resolve()) for rel in RESERVED_UNMANAGED_RELS}
+    backup_root = _package_backup_root(target)
     for key, info in installed.items():
         if not isinstance(key, str) or not Path(key).is_absolute():
             raise ManifestError("legacy installed file paths must be absolute strings")
@@ -417,25 +519,66 @@ def _legacy_manifest_entries(
         if not isinstance(legacy_sha, str) or not _SHA_RE.match(legacy_sha):
             raise ManifestError(f"invalid legacy installed_sha256 for {key}")
         legacy_sha = legacy_sha.lower()
+        if "sha256" in info:
+            if not isinstance(info["sha256"], str) or not _SHA_RE.fullmatch(info["sha256"]):
+                raise ManifestError(f"invalid legacy sha256 for {key}")
+            if info["sha256"].lower() != legacy_sha:
+                raise ManifestError(f"conflicting legacy hashes for {key}")
         backup = info.get("backup_path")
+        backup_sha = info.get("backup_sha256")
+        if backup_sha is not None and (
+            not isinstance(backup_sha, str) or not _SHA_RE.fullmatch(backup_sha)
+        ):
+            raise ManifestError(f"invalid legacy backup_sha256 for {key}")
+        if backup is None and backup_sha is not None:
+            raise ManifestError(f"legacy backup_sha256 requires backup_path for {key}")
         if backup is not None:
             if not isinstance(backup, str):
                 raise ManifestError(f"invalid legacy backup_path for {key}")
             raw_backup = Path(backup)
             if not raw_backup.is_absolute():
                 raw_backup = target / raw_backup
+            if Path(os.path.normpath(str(raw_backup))) != raw_backup:
+                raise ManifestError(f"legacy backup path must be normalized: {backup}")
             _reject_symlink_path(target, raw_backup, "legacy backup path")
             resolved_backup = raw_backup.resolve()
             if not resolved_backup.is_relative_to(target):
                 raise ManifestError(f"legacy backup path escapes target home: {backup}")
             if resolved_backup in (dest, target, manifest_canon):
                 raise ManifestError(f"legacy backup path collides with lifecycle path: {backup}")
+            backup_canon = str(resolved_backup)
+            if backup_canon in reserved or any(
+                Path(backup_canon).is_relative_to(Path(profile)) for profile in reserved
+            ):
+                raise ManifestError(f"legacy backup path overlaps reserved config: {backup}")
+            if resolved_backup == backup_root or resolved_backup.is_relative_to(backup_root):
+                # A v1 backup already in the confined v2 root can be retained,
+                # but it still must be unique and regular.
+                pass
+            if backup_canon in backup_owners:
+                raise ManifestError(f"legacy backup path collision: {backup}")
+            backup_owners[backup_canon] = canonical
+            if resolved_backup.is_symlink() or not resolved_backup.is_file():
+                raise ManifestError(f"legacy backup path is not a regular file: {backup}")
+            expected_backup = backup_sha.lower() if isinstance(backup_sha, str) else legacy_sha
+            if sha256_of(str(resolved_backup)) != expected_backup:
+                raise ManifestError(f"legacy backup hash mismatch: {backup}")
         if canonical not in payload_destinations:
             raise ManifestError(f"legacy installed file is not current package payload: {key}")
         source_keys[canonical] = key
         normalized[canonical] = {
             "legacy_sha256": legacy_sha,
+            "backup_path": str(resolved_backup) if backup is not None else None,
+            "backup_sha256": backup_sha.lower() if isinstance(backup_sha, str) else None,
         }
+    destination_set = set(normalized)
+    for backup, owner in backup_owners.items():
+        if backup in destination_set:
+            raise ManifestError(f"legacy backup collides with installed file: {backup}")
+        backup_path = Path(backup)
+        for destination in destination_set:
+            if backup_path == Path(destination) or backup_path.is_relative_to(Path(destination)):
+                raise ManifestError(f"legacy backup overlaps installed path: {backup}")
     return target, normalized
 
 
@@ -444,8 +587,9 @@ def _migrate_v1_manifest(
     repo_root: str,
     target_home: str,
     manifest_path: str,
-) -> dict:
-    """Build a v2 manifest from v1 without touching payload or user files."""
+    legacy_manifest_sha256: str | None = None,
+) -> tuple[dict, dict]:
+    """Build a v2 manifest and an all-or-nothing file mutation plan."""
     target = Path(target_home).resolve()
     payload = build_payload(repo_root, target_home)
     payload_destinations = {dest for _src, dest in payload}
@@ -458,34 +602,134 @@ def _migrate_v1_manifest(
 
     installed = {}
     omissions = {}
+    classifications = {}
+    writes = []
+    backup_copies = []
+    backup_removals = []
+    touched = {str(Path(manifest_path).resolve())}
+    source_by_dest = {dest: src for src, dest in payload}
+    agent_destinations = {
+        dest for dest in payload_destinations
+        if Path(dest).parent == target / ".codex" / "agents"
+    }
+
+    def _regular(path: Path, label: str) -> None:
+        if path.is_symlink() or not path.is_file():
+            raise ManifestError(f"{label} is not a regular file: {path}")
+
+    def _plan_backup(dest: str, legacy: dict | None, *, existing: bool) -> str | None:
+        """Validate a legacy backup or plan a confined backup for a new file."""
+        source_backup = legacy.get("backup_path") if legacy else None
+        if source_backup:
+            source = Path(source_backup)
+            _regular(source, "legacy backup")
+            expected = legacy.get("backup_sha256") or legacy["legacy_sha256"]
+            if sha256_of(str(source)) != expected:
+                raise ManifestError(f"legacy backup hash mismatch: {source}")
+            confined = source.is_relative_to(_package_backup_root(target))
+            if confined:
+                return str(source)
+            destination = _plan_backup_path(dest, target, _package_backup_root(target))
+            if destination in touched:
+                raise ManifestError(f"backup path collides with planned mutation: {destination}")
+            backup_copies.append((str(source), destination))
+            backup_removals.append(str(source))
+            touched.update((str(source), destination))
+            return destination
+        if existing:
+            destination = _plan_backup_path(dest, target, _package_backup_root(target))
+            if destination in touched:
+                raise ManifestError(f"backup path collides with planned mutation: {destination}")
+            backup_copies.append((dest, destination))
+            touched.add(destination)
+            return destination
+        return None
+
+    # First classify every legacy entry and reject every unsafe conflict.  No
+    # filesystem mutation occurs in this pass.
     for dest, legacy in legacy_entries.items():
         legacy_sha = legacy["legacy_sha256"]
         path = Path(dest)
         if path.exists():
-            if path.is_symlink() or not path.is_file():
-                raise ManifestError(f"legacy payload path is not a regular file: {dest}")
+            _regular(path, "legacy payload path")
             current_sha = sha256_of(dest)
             if current_sha == legacy_sha:
+                backup = _plan_backup(dest, legacy, existing=False)
                 installed[dest] = {
                     "ownership": "managed",
-                    "sha256": legacy_sha,
-                    "installed_sha256": legacy_sha,
-                    "backup_path": None,
+                    "sha256": sha256_of(source_by_dest[dest]),
+                    "installed_sha256": sha256_of(source_by_dest[dest]),
+                    "backup_path": backup,
                 }
+                touched.add(dest)
+                classifications[dest] = "pristine"
+                if installed[dest]["sha256"] != current_sha:
+                    writes.append((source_by_dest[dest], dest))
                 continue
+            if dest not in agent_destinations:
+                raise ManifestError(f"modified non-agent payload blocks migration: {dest}")
+            # User-customized declarations are explicitly preserved as
+            # unmanaged bytes; they are never included in installed_files.
             omissions[_target_relative(target, path)] = {
                 "ownership": "unmanaged",
                 "state": "modified",
                 "legacy_sha256": legacy_sha,
                 "migration_sha256": current_sha,
             }
+            classifications[dest] = "preserved_customized"
             continue
-        omissions[_target_relative(target, path)] = {
-            "ownership": "unmanaged",
-            "state": "missing",
-            "legacy_sha256": legacy_sha,
-            "migration_sha256": None,
+
+        source = Path(source_by_dest[dest])
+        _regular(source, "current payload source")
+        backup = _plan_backup(dest, legacy, existing=False)
+        src_sha = sha256_of(str(source))
+        installed[dest] = {
+            "ownership": "managed",
+            "sha256": src_sha,
+            "installed_sha256": src_sha,
+            "backup_path": backup,
         }
+        touched.add(dest)
+        writes.append((str(source), dest))
+        classifications[dest] = "repaired_missing"
+
+    # Any current payload omitted by v1 is a new package file and is installed
+    # from the validated source, with a user baseline backup when needed.
+    for source, dest in payload:
+        if dest in legacy_entries:
+            continue
+        source_path = Path(source)
+        _regular(source_path, "current payload source")
+        existing = Path(dest).exists()
+        if existing:
+            _regular(Path(dest), "new payload destination")
+        src_sha = sha256_of(source)
+        if existing:
+            if sha256_of(dest) != src_sha:
+                raise ManifestError(
+                    f"UNKNOWN_CONFLICT: omitted v1 payload already exists with unknown bytes: {dest}"
+                )
+            # The destination already contains the exact current payload.  It
+            # is safe to claim it without rewriting or creating a backup.
+            installed[dest] = {
+                "ownership": "managed",
+                "sha256": src_sha,
+                "installed_sha256": src_sha,
+                "backup_path": None,
+            }
+            touched.add(dest)
+            classifications[dest] = "new_payload"
+            continue
+        backup = _plan_backup(dest, None, existing=False)
+        installed[dest] = {
+            "ownership": "managed",
+            "sha256": src_sha,
+            "installed_sha256": src_sha,
+            "backup_path": backup,
+        }
+        touched.add(dest)
+        writes.append((source, dest))
+        classifications[dest] = "new_payload"
 
     migrated = {
         "schema_version": SCHEMA_VERSION,
@@ -494,9 +738,25 @@ def _migrate_v1_manifest(
         "installed_files": installed,
         "migration_omissions": omissions,
     }
+    migrated["migration_provenance"] = {
+        "schema_version": MIGRATION_PROVENANCE_SCHEMA,
+        "from_schema_version": 1,
+        "legacy_manifest_sha256": legacy_manifest_sha256 or ("0" * 64),
+        "classifications": classifications,
+        "counts": {
+            state: sum(value == state for value in classifications.values())
+            for state in MIGRATION_CLASSIFICATIONS
+        },
+    }
     # Reuse v2 validation on the complete candidate before writing it.
     _validate_v2_manifest(migrated, target_home, manifest_path)
-    return migrated
+    plan = {
+        "writes": writes,
+        "backup_copies": backup_copies,
+        "backup_removals": backup_removals,
+        "touched": touched,
+    }
+    return migrated, plan
 
 
 def cmd_migrate_manifest_v1(
@@ -508,15 +768,79 @@ def cmd_migrate_manifest_v1(
     manifest_path = str(_resolve_manifest_path(target_home, manifest_path))
     if not os.path.exists(manifest_path):
         raise ManifestError(f"no legacy manifest found at {manifest_path}")
+    try:
+        legacy_bytes = Path(manifest_path).read_bytes()
+    except OSError as exc:
+        raise ManifestError(f"failed to read legacy manifest {manifest_path}: {exc}")
     raw = read_json(manifest_path)
-    migrated = _migrate_v1_manifest(raw, repo_root, target_home, manifest_path)
+    legacy_digest = hashlib.sha256(legacy_bytes).hexdigest()
+    migrated, plan = _migrate_v1_manifest(
+        raw,
+        repo_root,
+        target_home,
+        manifest_path,
+        legacy_digest,
+    )
     if dry_run:
-        for dest in migrated["installed_files"]:
-            print(f"[DRY-RUN] Would claim managed file: {dest}")
-        for rel, info in migrated["migration_omissions"].items():
+        for source, dest in plan["writes"]:
+            state = migrated["migration_provenance"]["classifications"][dest]
+            print(f"[DRY-RUN] {state}: {source} -> {dest}")
+        for source, dest in plan["backup_copies"]:
+            print(f"[DRY-RUN] Would retain backup: {source} -> {dest}")
+        for rel, info in migrated.get("migration_omissions", {}).items():
             print(f"[DRY-RUN] Would preserve {info['state']} omission: {rel}")
         return
-    _write_manifest(manifest_path, migrated)
+
+    # Snapshot every file touched by the complete plan.  If any controlled
+    # operation fails, restore the exact bytes/modes and the exact v1 manifest.
+    snapshot = {}
+    for raw_path in plan["touched"] | {
+        dest for _src, dest in plan["writes"]
+    } | {
+        dest for _src, dest in plan["backup_copies"]
+    } | set(plan["backup_removals"]):
+        path = Path(raw_path)
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ManifestError(f"migration mutation path is not a regular file: {path}")
+        if path.exists():
+            snapshot[str(path)] = (path.read_bytes(), path.stat().st_mode)
+        else:
+            snapshot[str(path)] = None
+
+    def restore() -> None:
+        for raw_path, state in snapshot.items():
+            path = Path(raw_path)
+            try:
+                if state is None:
+                    if path.is_symlink() or path.is_file():
+                        path.unlink()
+                    continue
+                data, mode = state
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_name(f".{path.name}.rollback.{os.getpid()}")
+                tmp.write_bytes(data)
+                os.replace(tmp, path)
+                os.chmod(path, mode & 0o7777)
+            except OSError:
+                # Preserve the original failure; rollback is best effort after
+                # a filesystem-level error and never masks it.
+                pass
+
+    try:
+        for source, destination in plan["backup_copies"]:
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        for source, destination in plan["writes"]:
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            if os.path.basename(destination) in EXECUTABLE_PAYLOAD_NAMES:
+                os.chmod(destination, 0o755)
+        for source in plan["backup_removals"]:
+            Path(source).unlink()
+        _write_manifest(manifest_path, migrated)
+    except (OSError, ManifestError):
+        restore()
+        raise
     print(f"Migrated manifest v1 -> v2: {manifest_path}")
 
 
@@ -535,10 +859,17 @@ def _write_manifest(manifest_path: str, manifest: dict) -> None:
     manifest_dir = os.path.dirname(manifest_path)
     os.makedirs(manifest_dir, exist_ok=True)
     tmp = f"{manifest_path}.tmp.{os.getpid()}"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2)
-        handle.write("\n")
-    os.replace(tmp, manifest_path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2)
+            handle.write("\n")
+        os.replace(tmp, manifest_path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: bool) -> None:
@@ -548,9 +879,10 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
 
     old_entries = {}
     migration_omissions = {}
+    migration_provenance = None
     if os.path.exists(manifest_path):
         raw = read_json(manifest_path)
-        _, old_entries, migration_omissions = _validate_v2_manifest(
+        _, old_entries, migration_omissions, migration_provenance = _validate_v2_manifest(
             raw, target_home, manifest_path
         )
 
@@ -560,7 +892,10 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
             raise ManifestError(f"payload source missing: {src}")
 
     active_payload = [
-        (src, dest) for src, dest in payload if _target_relative(target, Path(dest)) not in migration_omissions
+        (src, dest)
+        for src, dest in payload
+        if migration_omissions.get(_target_relative(target, Path(dest)), {}).get("state")
+        != "modified"
     ]
     new_entries = {}
     for src, dest in active_payload:
@@ -629,8 +964,33 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
         "managed_root": str(target),
         "installed_files": new_entries,
     }
-    if migration_omissions:
-        new_manifest["migration_omissions"] = migration_omissions
+    remaining_omissions = {
+        rel: info
+        for rel, info in migration_omissions.items()
+        if info.get("state") == "modified"
+    }
+    if remaining_omissions:
+        new_manifest["migration_omissions"] = remaining_omissions
+    if migration_provenance is not None:
+        classifications = dict(migration_provenance["classifications"])
+        for rel, info in migration_omissions.items():
+            if info.get("state") == "missing":
+                classifications[str((target / rel).resolve())] = "repaired_missing"
+        classifications = {
+            dest: state
+            for dest, state in classifications.items()
+            if dest in new_entries or state == "preserved_customized"
+        }
+        new_manifest["migration_provenance"] = {
+            "schema_version": MIGRATION_PROVENANCE_SCHEMA,
+            "from_schema_version": 1,
+            "legacy_manifest_sha256": migration_provenance["legacy_manifest_sha256"],
+            "classifications": classifications,
+            "counts": {
+                state: sum(value == state for value in classifications.values())
+                for state in MIGRATION_CLASSIFICATIONS
+            },
+        }
     _write_manifest(manifest_path, new_manifest)
 
 
@@ -639,7 +999,7 @@ def cmd_verify(target_home: str, manifest_path: str) -> None:
     if not os.path.exists(manifest_path):
         raise ManifestError(f"no installation manifest found at {manifest_path}")
     raw = read_json(manifest_path)
-    _, entries, _omissions = _validate_v2_manifest(raw, target_home, manifest_path)
+    _, entries, omissions, _provenance = _validate_v2_manifest(raw, target_home, manifest_path)
 
     problems = 0
     for dest, info in entries.items():
@@ -651,8 +1011,16 @@ def cmd_verify(target_home: str, manifest_path: str) -> None:
         if sha256_of(dest) != recorded:
             print(f"[FAIL] Modified managed file: {dest}", file=sys.stderr)
             problems += 1
+    # Preserved declarations remain user-owned, but they are still part of the
+    # verifier's observable surface: a deleted declaration is a failure and a
+    # later shell-level TOML/policy check must inspect its bytes.
+    for rel, info in omissions.items():
+        dest = str((Path(target_home).resolve() / rel).resolve())
+        if not os.path.isfile(dest) or os.path.islink(dest):
+            print(f"[FAIL] Missing preserved user file: {dest}", file=sys.stderr)
+            problems += 1
     if problems:
-        raise ManifestError(f"{problems} managed file(s) modified or missing")
+        raise ManifestError(f"{problems} managed or preserved file(s) modified or missing")
 
 
 def cmd_uninstall(target_home: str, manifest_path: str) -> None:
@@ -660,7 +1028,7 @@ def cmd_uninstall(target_home: str, manifest_path: str) -> None:
     if not os.path.exists(manifest_path):
         raise ManifestError(f"no installation manifest found at {manifest_path}")
     raw = read_json(manifest_path)
-    _, entries, _omissions = _validate_v2_manifest(raw, target_home, manifest_path)
+    _, entries, _omissions, _provenance = _validate_v2_manifest(raw, target_home, manifest_path)
 
     # Preflight every entry before the first mutation so a single ownership
     # ambiguity aborts the whole operation without touching anything.
