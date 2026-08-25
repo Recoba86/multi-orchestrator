@@ -295,6 +295,14 @@ class VerifyBlackBoxTests(unittest.TestCase):
 
         self._rejected_case("conflicting canonical leaf model", mutate)
 
+    def test_tampered_managed_doctor_cli_is_rejected(self):
+        def mutate(home):
+            doctor = home / ".agents" / "bin" / "doctor"
+            self.assertTrue(doctor.is_file(), "doctor fixture missing before mutation")
+            doctor.write_text("# tampered managed CLI\n", encoding="utf-8")
+
+        self._rejected_case("tampered managed Doctor CLI", mutate)
+
 
 if __name__ == "__main__":
     unittest.main()

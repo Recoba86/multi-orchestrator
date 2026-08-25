@@ -13,13 +13,29 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
 - **Implementer-Aware Independent Verification:** The agent that implements code cannot verify it (`verifier != implementer`). If verifiers are exhausted, tasks remain unverified rather than self-approved.
 - **Fail-Closed Mutation Safety:** Ambiguous write state makes the Controller refuse further write-capable requests.
 - **Dedicated Read-Only Premium Review:** High-stakes review requests assign Claude Opus 4.6 Thinking a read-only, non-mutating contract.
-- **Deterministic 3-Attempt Fallback:** Predictable request-routing chains across Scout, Standard Worker, and Deep Worker roles.
+- **Deterministic Role-Specific Fallback:** Three-entry request-routing chains are defined for Scout, Standard Worker, and Deep Worker; verifier, premium-review, and Dedicated Boss bindings follow separate policies.
 
 These are repository protocol guarantees. Native child allocation, effective identity, and Host-wide admission are `HOST_EXTERNAL`; this repository does not intercept or authorize them. See the authoritative [Execution Boundary Model](core/ORCHESTRATOR_CORE.md#execution-boundary-model-host_external--authoritative).
+
+The repository also includes a provider-agnostic, declarative role contract at
+[`config/models.yaml`](config/models.yaml) for `planner`, `scout`, `worker`, and
+`reviewer`. Its ordered `preferred` and `fallback` entries are user-editable
+examples or optional recommendations, not universal requirements. Read-only
+Doctor (`doctor`) validates configuration, discovers local declarations, and
+runs the deterministic offline advisory resolver (`core/model_policy.py`,
+`core/model_resolver.py`). Model preferences can be safely and explicitly
+applied via `configure-models` (`--apply --approve --expected-sha256`).
+These tools do not probe remote providers or perform native Host allocation,
+spawn, or routing overrides (`HOST_EXTERNAL`). See the [configuration
+contract](docs/MODEL_CONFIGURATION.md).
 
 ---
 
 ## Architecture at a Glance
+
+Scout, Standard Worker, Deep Worker, Implementer-Aware Verifier, and Premium
+Reviewer are leaf roles in the Execution Plane. The Dedicated Boss remains in
+the Decision Plane, while the Root Controller remains in the Control Plane.
 
 ```text
       User / Developer
@@ -85,6 +101,7 @@ Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role s
 - [Architecture Specification](docs/ARCHITECTURE.md)
 - [Safety Invariants & Failure Taxonomy](docs/SAFETY.md)
 - [Model Registry & Routing](docs/MODELS.md)
+- [Declarative Model Configuration](docs/MODEL_CONFIGURATION.md)
 - [Installation Guide](docs/INSTALLATION.md)
 
 ---

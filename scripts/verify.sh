@@ -80,12 +80,60 @@ CODEX_AGENTS="${TARGET_HOME}/.codex/agents"
 SOL_CONFIG="${TARGET_HOME}/.codex/sol-luna.config.toml"
 GROK_CONFIG="${TARGET_HOME}/.codex/grok-v2.config.toml"
 TRACE_HELPER="${TARGET_HOME}/.agents/bin/mission-trace"
+DOCTOR="${TARGET_HOME}/.agents/bin/doctor"
+CONFIGURE_MODELS="${TARGET_HOME}/.agents/bin/configure-models"
+MODELS_CONFIG="${TARGET_HOME}/.agents/config/models.yaml"
+MODEL_POLICY_MODULES=(
+  "model_availability"
+  "model_capabilities"
+  "model_discovery"
+  "model_intelligence"
+  "model_policy"
+  "model_resolver"
+)
 
 # 1. Existence Checks
 assert_file_exists "${CORE}"
 assert_file_exists "${SOL_SKILL}"
 assert_file_exists "${GROK_SKILL}"
 assert_file_exists "${TRACE_HELPER}"
+
+# 1b. Model Policy Payload & Unmanaged Config Existence Checks
+echo "--- Verifying Installed Model Policy Payload ---"
+for module in "${MODEL_POLICY_MODULES[@]}"; do
+  assert_file_exists "${TARGET_HOME}/.agents/core/${module}.py"
+done
+assert_file_exists "${DOCTOR}"
+assert_file_exists "${CONFIGURE_MODELS}"
+assert_file_exists "${MODELS_CONFIG}"
+
+# 1c. Installed Commands Execute Read-Only
+echo "--- Verifying Installed Commands Execute Read-Only ---"
+if [[ ! -x "${DOCTOR}" ]]; then
+  echo "[FAIL] Doctor is not executable: ${DOCTOR}" >&2
+  FAILED=1
+else
+  echo "[PASS] Doctor is executable"
+fi
+if ! PYTHONDONTWRITEBYTECODE=1 "${DOCTOR}" --config "${MODELS_CONFIG}" --target-home "${TARGET_HOME}" >/dev/null 2>&1; then
+  echo "[FAIL] Installed Doctor failed read-only execution" >&2
+  FAILED=1
+else
+  echo "[PASS] Installed Doctor executed read-only"
+fi
+
+if [[ ! -x "${CONFIGURE_MODELS}" ]]; then
+  echo "[FAIL] configure-models is not executable: ${CONFIGURE_MODELS}" >&2
+  FAILED=1
+else
+  echo "[PASS] configure-models is executable"
+fi
+if ! PYTHONDONTWRITEBYTECODE=1 "${CONFIGURE_MODELS}" --config "${MODELS_CONFIG}" >/dev/null 2>&1; then
+  echo "[FAIL] Installed configure-models failed read-only execution" >&2
+  FAILED=1
+else
+  echo "[PASS] Installed configure-models executed read-only"
+fi
 
 # 2. Verify Every Shipped Leaf Agent Declaration
 ALL_LEAF_AGENTS=(

@@ -40,6 +40,23 @@ Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
       User / Developer
 ```
 
+## Declarative model configuration (non-executable)
+
+The repository also ships [`config/models.yaml`](../config/models.yaml), a
+provider-agnostic, user-editable description of four logical roles:
+`planner`, `scout`, `worker`, and `reviewer`. Each role records requirements,
+ordered preferred and fallback model-identifier recommendations, and capability
+hints.
+
+This file serves as advisory configuration. Centralized policy semantics in
+`core/model_policy.py` and deterministic offline advisory resolution in
+`core/model_resolver.py` (`resolve_role`) evaluate discovered declarations,
+offline availability observations, capability compatibility, and intelligence
+profiles. Doctor renders structured resolution outcomes, while `configure-models`
+provides explicit, approved configuration updates. These tools are strictly
+offline and advisory; they never mutate Host state, probe remote providers, or
+override normative Core routing (`core/ORCHESTRATOR_CORE.md`).
+
 ## Six Hard Invariants
 
 1. **Dedicated Boss Mandatory:** If a matching Boss request cannot be submitted or Host-returned evidence does not establish the required child, the Controller MUST refuse protocol continuation with `BOSS_BINDING_UNAVAILABLE`.

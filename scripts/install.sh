@@ -48,26 +48,28 @@ if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
   exit 1
 fi
 
-# Install Config Profiles (only if absent); these examples are intentionally
-# not part of the ownership manifest.
-install_config_example() {
+# Install Unmanaged Config Files (only if absent); these examples and the
+# user-owned models config are intentionally not part of the ownership
+# manifest, so upgrade/uninstall never overwrites or removes them.
+install_unmanaged_file() {
   local src="$1"
   local dest="$2"
   if [[ "${DRY_RUN}" -eq 1 ]]; then
-    echo "[DRY-RUN] Would copy profile (if absent): ${src} -> ${dest}"
+    echo "[DRY-RUN] Would copy unmanaged file (if absent): ${src} -> ${dest}"
     return 0
   fi
   mkdir -p "$(dirname "${dest}")"
   if [[ ! -f "${dest}" ]]; then
     cp -p "${src}" "${dest}"
-    echo "Created config profile: ${dest}"
+    echo "Created unmanaged file: ${dest}"
   else
-    echo "Config profile exists, preserving: ${dest}"
+    echo "Unmanaged file exists, preserving: ${dest}"
   fi
 }
 
-install_config_example "${REPO_ROOT}/config/sol-luna.config.example.toml" "${CODEX_DIR}/sol-luna.config.toml"
-install_config_example "${REPO_ROOT}/config/grok-v2.config.example.toml" "${CODEX_DIR}/grok-v2.config.toml"
+install_unmanaged_file "${REPO_ROOT}/config/sol-luna.config.example.toml" "${CODEX_DIR}/sol-luna.config.toml"
+install_unmanaged_file "${REPO_ROOT}/config/grok-v2.config.example.toml" "${CODEX_DIR}/grok-v2.config.toml"
+install_unmanaged_file "${REPO_ROOT}/config/models.yaml" "${TARGET_HOME}/.agents/config/models.yaml"
 
 echo ""
 echo "=== Installation Completed Successfully ==="

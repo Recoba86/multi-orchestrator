@@ -21,6 +21,22 @@ You are the **Root Controller** executing in the current session.
 
 Native allocation and resolved effective identity are `HOST_EXTERNAL`. This wrapper controls protocol validation and request submission only; `PreToolUse Agent` is an optional guardrail, not strict Host enforcement. See Core's authoritative Execution Boundary Model.
 
+## Declarative model-role configuration
+
+The source repository's [`config/models.yaml`](../../config/models.yaml) is a
+provider-agnostic, user-editable contract for `planner`, `scout`, `worker`, and
+`reviewer`. Its ordered `preferred` and `fallback` values are optional model
+recommendations, not universal requirements. Controller executes read-only
+preflight of installed Doctor / unmanaged configuration (`~/.agents/config/models.yaml`)
+and passes factual resolution status to Boss in the environment summary. Advisory
+preflight results never automatically apply configuration or reorder Core role
+or verifier chains. Missing, invalid, or unresolved advisory configuration
+never authorizes automatic model substitution or config mutation; users must
+explicitly invoke `configure-models` with approval and file SHA-256 digest. Core
+required Boss bindings (`SOL_HIGH`), endpoint registry, role chains, verifier
+independence, packet identity, and requested `fork_turns="none"` remain
+strictly Core-only.
+
 ## 1. Load Normative Shared Core
 
 Before delegating any subtasks, you MUST read and apply the normative rules in:

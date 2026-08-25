@@ -1,0 +1,65 @@
+# User-owned declarative, provider-agnostic role/model configuration for logical roles:
+# planner, scout, worker, reviewer.
+#
+# preferred/fallback entries are ordered optional recommendations/examples; personal and
+# provider identities are replaceable. Evaluated by read-only Doctor and deterministic offline
+# advisory resolver (core/model_policy.py, core/model_resolver.py). Safe explicit updates can be applied via
+# configure-models CLI (--apply --approve --expected-sha256).
+#
+# Installed unmanaged at ~/.agents/config/models.yaml (seeded on install, preserved across upgrades/uninstall).
+# Does not alter normative Core routing (core/ORCHESTRATOR_CORE.md), probe remote providers, or perform
+# native Host allocation/spawn (HOST_EXTERNAL).
+
+planner:
+  requires:
+    - "decision-plane planning"
+    - "structured task decomposition"
+  preferred:
+    - "gpt-5.6-sol"
+    - "nine-router/gcli/grok-4.6-high"
+  fallback:
+    - "gpt-5.6-luna"
+    - "opencode-go/deepseek-v4-pro"
+  capability_hints:
+    - "reasoning"
+    - "long_context"
+
+scout:
+  requires:
+    - "read-only inspection"
+    - "evidence collection"
+  preferred:
+    - "nine-router/ag/gemini-3.7-flash-high"
+  fallback:
+    - "opencode-go/deepseek-v4-flash"
+    - "gpt-5.6-luna"
+  capability_hints:
+    - "fast"
+    - "analysis"
+
+worker:
+  requires:
+    - "bounded write ownership"
+    - "self-contained task packet"
+  preferred:
+    - "nine-router/ag/gemini-3.7-flash-high"
+  fallback:
+    - "gpt-5.6-luna"
+    - "opencode-go/deepseek-v4-flash"
+  capability_hints:
+    - "coding"
+    - "reasoning"
+
+reviewer:
+  requires:
+    - "read-only verification"
+    - "independence from implementer"
+  preferred:
+    - "opencode-go-responses/gpt-5.6-luna"
+    - "nine-router/ag/claude-opus-4-6-thinking"
+  fallback:
+    - "opencode-go/deepseek-v4-pro"
+    - "nine-router/ag/gemini-3.7-flash-high"
+  capability_hints:
+    - "review"
+    - "analysis"

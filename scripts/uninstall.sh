@@ -46,9 +46,10 @@ remove_dir_if_empty "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/agen
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2"
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/agents"
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2"
+remove_dir_if_empty "${TARGET_HOME}/.agents/core"
 remove_dir_if_empty "${TARGET_HOME}/.agents/bin"
 remove_dir_if_empty "${TARGET_HOME}/.codex/agents"
 
 echo ""
 echo "=== Uninstallation Completed Successfully ==="
-echo "Note: Configuration profiles (.codex/*.config.toml) were left untouched."
+echo "Note: Configuration profiles (.codex/*.config.toml) and .agents/config/models.yaml were left untouched."

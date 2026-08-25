@@ -25,10 +25,12 @@ SCHEMA_VERSION = 2
 MANIFEST_REL = ".agents/.multi-orchestrator-install-manifest.json"
 BACKUP_ROOT_REL = ".multi-orchestrator-backups"
 # Target-home-relative paths the installer copies as unmanaged example
-# profiles.  They must never become a managed destination or backup source.
-RESERVED_PROFILE_RELS = (
+# profiles or user-owned config.  They must never become a managed destination
+# or backup source, and are preserved across upgrade/uninstall.
+RESERVED_UNMANAGED_RELS = (
     ".codex/sol-luna.config.toml",
     ".codex/grok-v2.config.toml",
+    ".agents/config/models.yaml",
 )
 
 # (repo-relative source, target-home-relative destination)
@@ -41,7 +43,18 @@ PAYLOAD = [
     ("skills/grok-orchestrator-v2/USAGE.md", ".agents/skills/grok-orchestrator-v2/USAGE.md"),
     ("skills/grok-orchestrator-v2/agents/openai.yaml", ".agents/skills/grok-orchestrator-v2/agents/openai.yaml"),
     ("scripts/mission-trace.py", ".agents/bin/mission-trace"),
+    ("core/model_availability.py", ".agents/core/model_availability.py"),
+    ("core/model_capabilities.py", ".agents/core/model_capabilities.py"),
+    ("core/model_discovery.py", ".agents/core/model_discovery.py"),
+    ("core/model_intelligence.py", ".agents/core/model_intelligence.py"),
+    ("core/model_policy.py", ".agents/core/model_policy.py"),
+    ("core/model_resolver.py", ".agents/core/model_resolver.py"),
+    ("scripts/doctor.py", ".agents/bin/doctor"),
+    ("scripts/configure_models.py", ".agents/bin/configure-models"),
 ]
+
+# Managed payload destinations that must be executable on disk.
+EXECUTABLE_PAYLOAD_NAMES = ("mission-trace", "doctor", "configure-models")
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -137,7 +150,7 @@ def _validate_mutation_graph(
     root_canon = str(root)
     backup_root = _package_backup_root(root)
     backup_root_canon = str(backup_root)
-    reserved = {str((target / rel).resolve()) for rel in RESERVED_PROFILE_RELS}
+    reserved = {str((target / rel).resolve()) for rel in RESERVED_UNMANAGED_RELS}
 
     for dest in dest_set:
         if dest in reserved:
@@ -353,7 +366,7 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
     for src, dest in payload:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copy2(src, dest)
-        if dest.endswith("mission-trace"):
+        if os.path.basename(dest) in EXECUTABLE_PAYLOAD_NAMES:
             os.chmod(dest, 0o755)
 
     # Retire formerly owned files whose current bytes still match the recorded

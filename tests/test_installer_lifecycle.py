@@ -21,6 +21,17 @@ INSTALL = DEV_ROOT / "scripts" / "install.sh"
 VERIFY = DEV_ROOT / "scripts" / "verify.sh"
 UNINSTALL = DEV_ROOT / "scripts" / "uninstall.sh"
 MANIFEST_REL = Path(".agents/.multi-orchestrator-install-manifest.json")
+CORE_MODULES = (
+    "model_availability",
+    "model_capabilities",
+    "model_discovery",
+    "model_intelligence",
+    "model_policy",
+    "model_resolver",
+)
+DOCTOR_BIN = Path(".agents/bin/doctor")
+CONFIGURE_BIN = Path(".agents/bin/configure-models")
+MODELS_CONFIG = Path(".agents/config/models.yaml")
 
 
 class InstallerLifecycleTests(unittest.TestCase):
@@ -351,6 +362,135 @@ class InstallerLifecycleTests(unittest.TestCase):
                 self._message("uninstall mutated payload after corrupt manifest", result),
             )
             self.assertNotEqual(before, after, "corrupting manifest should be observable")
+
+    def test_clean_install_packages_model_policy_payload_and_unmanaged_config(self):
+        with tempfile.TemporaryDirectory(prefix="installer-model-policy-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            manifest = self._read_manifest(home)
+            entries = self._entries(manifest)
+            managed_dests = {
+                self._manifest_path_for_entry(home, manifest, key).resolve()
+                for key in entries
+            }
+
+            for name in CORE_MODULES:
+                dest = (home / ".agents" / "core" / f"{name}.py").resolve()
+                self.assertTrue(dest.is_file(), f"missing core module: {dest}")
+                self.assertIn(dest, managed_dests, f"core module not managed: {dest}")
+
+            for rel in (DOCTOR_BIN, CONFIGURE_BIN):
+                dest = (home / rel).resolve()
+                self.assertTrue(dest.is_file(), f"missing command: {dest}")
+                self.assertIn(dest, managed_dests, f"command not managed: {dest}")
+                self.assertTrue(os.access(dest, os.X_OK), f"command not executable: {dest}")
+
+            config = (home / MODELS_CONFIG).resolve()
+            self.assertTrue(config.is_file(), "missing unmanaged models.yaml")
+            self.assertNotIn(config, managed_dests, "models.yaml must not be managed")
+
+    def test_installed_commands_execute_readonly(self):
+        with tempfile.TemporaryDirectory(prefix="installer-readonly-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            config = home / MODELS_CONFIG
+            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+            doctor = subprocess.run(
+                [str(home / DOCTOR_BIN), "--config", str(config), "--target-home", str(home)],
+                cwd=DEV_ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(doctor.returncode, 0, self._message("doctor", doctor))
+
+            configure = subprocess.run(
+                [str(home / CONFIGURE_BIN), "--config", str(config)],
+                cwd=DEV_ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(configure.returncode, 0, self._message("configure-models", configure))
+
+    def test_existing_user_config_preserved_across_install_upgrade_uninstall(self):
+        with tempfile.TemporaryDirectory(prefix="installer-config-preserve-red-") as raw_home:
+            home = Path(raw_home)
+            config = home / MODELS_CONFIG
+            config.parent.mkdir(parents=True, exist_ok=True)
+            custom = b"# user-owned custom bytes\n"
+            config.write_bytes(custom)
+
+            self._install(home)
+            self.assertEqual(config.read_bytes(), custom, "install overwrote user config")
+
+            upgrade = self._run(INSTALL, home)
+            self.assertEqual(upgrade.returncode, 0, self._message("upgrade", upgrade))
+            self.assertEqual(config.read_bytes(), custom, "upgrade overwrote user config")
+
+            self.assertTrue((home / ".agents" / "core" / "model_policy.py").is_file())
+            self.assertTrue((home / DOCTOR_BIN).is_file())
+
+            uninstall = self._run(UNINSTALL, home)
+            self.assertEqual(uninstall.returncode, 0, self._message("uninstall", uninstall))
+            self.assertTrue(config.is_file(), "uninstall removed user config")
+            self.assertEqual(config.read_bytes(), custom, "uninstall changed user config")
+
+            for name in CORE_MODULES:
+                self.assertFalse(
+                    (home / ".agents" / "core" / f"{name}.py").exists(),
+                    f"core module {name} not removed",
+                )
+            self.assertFalse((home / DOCTOR_BIN).exists(), "doctor not removed")
+            self.assertFalse((home / CONFIGURE_BIN).exists(), "configure-models not removed")
+
+    def test_managed_cli_tamper_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="installer-cli-tamper-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            doctor = home / DOCTOR_BIN
+            tampered = b"#!/usr/bin/env python3\nprint('tampered')\n"
+            doctor.write_bytes(tampered)
+
+            verify = self._run(VERIFY, home)
+            self.assertNotEqual(
+                verify.returncode, 0, self._message("verify accepted tampered CLI", verify)
+            )
+
+            uninstall = self._run(UNINSTALL, home)
+            self.assertNotEqual(
+                uninstall.returncode,
+                0,
+                self._message("uninstall removed tampered CLI", uninstall),
+            )
+            self.assertEqual(doctor.read_bytes(), tampered, "tampered CLI was mutated")
+
+    def test_uninstall_removes_managed_modules_commands_but_preserves_default_config(self):
+        with tempfile.TemporaryDirectory(prefix="installer-uninstall-model-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            config = home / MODELS_CONFIG
+            original = config.read_bytes()
+            self.assertTrue(original, "default config should be non-empty")
+
+            result = self._run(UNINSTALL, home)
+            self.assertEqual(result.returncode, 0, self._message("uninstall", result))
+
+            self.assertTrue(config.is_file(), "default config removed by uninstall")
+            self.assertEqual(config.read_bytes(), original, "default config changed by uninstall")
+
+            for name in CORE_MODULES:
+                self.assertFalse(
+                    (home / ".agents" / "core" / f"{name}.py").exists(),
+                    f"core module {name} not removed",
+                )
+            self.assertFalse((home / DOCTOR_BIN).exists(), "doctor not removed")
+            self.assertFalse((home / CONFIGURE_BIN).exists(), "configure-models not removed")
+            self.assertFalse(
+                (home / ".agents" / "bin" / "mission-trace").exists(),
+                "mission-trace not removed",
+            )
 
 
 if __name__ == "__main__":
