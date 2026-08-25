@@ -114,6 +114,34 @@ class InstallerLifecycleTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
+    def _write_v1_manifest(self, home: Path) -> dict:
+        """Convert a fresh v2 fixture to the legacy installer manifest shape."""
+        v2 = self._read_manifest(home)
+        entries = self._entries(v2)
+        v1 = {
+            "version": 1,
+            "installed_files": {
+                key: {
+                    "installed_sha256": info["sha256"],
+                    "backup_path": None,
+                }
+                for key, info in entries.items()
+            },
+        }
+        self._write_manifest(home, v1)
+        return v1
+
+    def _migrate(self, home: Path, *, dry_run: bool = False):
+        args = ["--migrate-manifest-v1"]
+        if dry_run:
+            args.append("--dry-run")
+        return subprocess.run(
+            [str(INSTALL), *args, "--target-home", str(home)],
+            cwd=DEV_ROOT,
+            capture_output=True,
+            text=True,
+        )
+
     def _schema_case(self, mutate):
         """All lifecycle entry points reject the same malformed manifest pre-write."""
         for script in (INSTALL, VERIFY, UNINSTALL):
@@ -491,6 +519,120 @@ class InstallerLifecycleTests(unittest.TestCase):
                 (home / ".agents" / "bin" / "mission-trace").exists(),
                 "mission-trace not removed",
             )
+
+    def test_migrate_v1_explicitly_claims_clean_files_and_records_omissions(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            entries = v1["installed_files"]
+            modified_key = next(
+                key for key in entries if key.endswith("router-model-nine-router-stepplan-step-3-7-flash.toml")
+            )
+            missing_key = next(
+                key for key in entries if key.endswith("router-model-custom-qwen3-8-27b.toml")
+            )
+            modified_path = Path(modified_key)
+            modified_path.write_bytes(b"user-owned router declaration\n")
+            missing_path = Path(missing_key)
+            missing_path.unlink()
+            before_modified = modified_path.read_bytes()
+            before = self._snapshot(home)
+
+            dry_run = self._migrate(home, dry_run=True)
+            self.assertEqual(dry_run.returncode, 0, self._message("migration dry-run", dry_run))
+            self.assertEqual(self._snapshot(home), before)
+            self.assertEqual(self._manifest_path(home).read_bytes(), json.dumps(v1, indent=2).encode() + b"\n")
+
+            result = self._migrate(home)
+            self.assertEqual(result.returncode, 0, self._message("migration", result))
+            migrated = self._read_manifest(home)
+            self.assertEqual(migrated.get("schema_version"), 2)
+            managed = self._entries(migrated)
+            omissions = migrated.get("migration_omissions")
+            self.assertIsInstance(omissions, dict)
+            modified_rel = str(modified_path.resolve().relative_to(home.resolve()))
+            missing_rel = str(missing_path.resolve().relative_to(home.resolve()))
+            self.assertIn(modified_rel, omissions)
+            self.assertIn(missing_rel, omissions)
+            self.assertNotIn(modified_key, managed)
+            self.assertNotIn(missing_key, managed)
+            self.assertEqual(modified_path.read_bytes(), before_modified)
+            self.assertFalse(missing_path.exists())
+            self.assertEqual(omissions[modified_rel]["state"], "modified")
+            self.assertEqual(
+                omissions[modified_rel]["migration_sha256"],
+                hashlib.sha256(before_modified).hexdigest(),
+            )
+            self.assertEqual(omissions[missing_rel]["state"], "missing")
+            self.assertIsNone(omissions[missing_rel]["migration_sha256"])
+            verify = self._run(VERIFY, home)
+            self.assertEqual(verify.returncode, 0, self._message("verify migrated omissions", verify))
+
+    def test_v1_requires_explicit_migration_and_normal_lifecycle_is_unchanged(self):
+        for script in (INSTALL, VERIFY, UNINSTALL):
+            with self.subTest(script=script.name):
+                with tempfile.TemporaryDirectory(prefix="installer-migrate-explicit-red-") as raw_home:
+                    home = Path(raw_home)
+                    self._install(home)
+                    self._write_v1_manifest(home)
+                    before = self._snapshot(home)
+                    result = self._run(script, home)
+                    self.assertNotEqual(result.returncode, 0, self._message(script.name, result))
+                    self.assertEqual(self._snapshot(home), before)
+
+    def test_migrated_omissions_are_persistent_and_unmanaged(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-persist-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            modified_key = next(
+                key for key in v1["installed_files"] if key.endswith("router-model-nine-router-stepplan-step-3-7-flash.toml")
+            )
+            modified_path = Path(modified_key)
+            modified_path.write_bytes(
+                modified_path.read_bytes() + b"\n# user customization survives lifecycle\n"
+            )
+            self.assertEqual(self._migrate(home).returncode, 0)
+
+            modified_path.write_bytes(
+                modified_path.read_bytes() + b"# changed after migration\n"
+            )
+            preserved = modified_path.read_bytes()
+            verify = self._run(VERIFY, home)
+            self.assertEqual(verify.returncode, 0, self._message("verify omission", verify))
+            install = self._run(INSTALL, home)
+            self.assertEqual(install.returncode, 0, self._message("install omission", install))
+            self.assertEqual(modified_path.read_bytes(), preserved)
+            uninstall = self._run(UNINSTALL, home)
+            self.assertEqual(uninstall.returncode, 0, self._message("uninstall omission", uninstall))
+            self.assertEqual(modified_path.read_bytes(), preserved)
+
+    def test_failed_or_repeated_v1_migration_does_not_mutate_fixture(self):
+        with tempfile.TemporaryDirectory(prefix="installer-migrate-atomic-red-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            before = self._snapshot(home)
+            invalid = self._read_manifest(home)
+            invalid["installed_files"]["../escape"] = {
+                "installed_sha256": hashlib.sha256(b"escape").hexdigest(),
+                "backup_path": None,
+            }
+            self._write_manifest(home, invalid)
+            invalid_before = self._snapshot(home)
+            failed = self._migrate(home)
+            self.assertNotEqual(failed.returncode, 0, self._message("invalid migration", failed))
+            self.assertEqual(self._snapshot(home), invalid_before)
+
+            self._write_manifest(home, v1)
+            migrated = self._migrate(home)
+            self.assertEqual(migrated.returncode, 0, self._message("migration", migrated))
+            after_first = self._snapshot(home)
+            repeated = self._migrate(home)
+            self.assertNotEqual(repeated.returncode, 0, self._message("repeated migration", repeated))
+            self.assertEqual(self._snapshot(home), after_first)
+            self.assertNotEqual(before, after_first)
 
 
 if __name__ == "__main__":

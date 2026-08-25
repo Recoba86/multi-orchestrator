@@ -264,7 +264,7 @@ class DoctorCommandTests(unittest.TestCase):
                 "source_type": "fixture",
                 "strength": "MEDIUM",
                 "locator": "urn:fixture:future",
-                "observed_at": "2026-08-25T13:00:00+00:00",
+                "observed_at": "2099-01-01T00:00:00+00:00",
                 "summary": "future fixture",
             },
         ]

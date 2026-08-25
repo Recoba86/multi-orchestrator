@@ -57,6 +57,7 @@ PAYLOAD = [
 EXECUTABLE_PAYLOAD_NAMES = ("mission-trace", "doctor", "configure-models")
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+MIGRATION_OMISSION_STATES = frozenset(("modified", "missing"))
 
 
 class ManifestError(Exception):
@@ -208,8 +209,73 @@ def _validate_mutation_graph(
                 )
 
 
-def validate_manifest(manifest, target_home: str, manifest_path: str):
-    """Return (managed_root, normalized_entries) or raise ManifestError."""
+def _validate_migration_omissions(
+    target: Path,
+    root: Path,
+    installed: dict,
+    omissions,
+    manifest_path: str,
+) -> dict:
+    """Validate and canonicalize unmanaged paths preserved during v1 migration."""
+    if omissions is None:
+        return {}
+    if not isinstance(omissions, dict):
+        raise ManifestError("migration_omissions must be an object")
+
+    installed_relative = {
+        str(Path(dest).relative_to(target))
+        for dest in installed
+    }
+    normalized = {}
+    manifest_canon = Path(manifest_path).resolve()
+    for key, info in omissions.items():
+        if not isinstance(key, str) or not key:
+            raise ManifestError("migration omission paths must be non-empty strings")
+        relative = Path(key)
+        if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
+            raise ManifestError(f"migration omission path must be canonical relative: {key}")
+        if str(relative) != key:
+            raise ManifestError(f"migration omission path must be normalized: {key}")
+        dest = _resolve_within(target, key, "migration omission path")
+        if not dest.is_relative_to(root):
+            raise ManifestError(f"migration omission path escapes managed root: {key}")
+        if dest == manifest_canon:
+            raise ManifestError(f"migration omission path collides with manifest: {key}")
+        if dest.is_symlink():
+            raise ManifestError(f"migration omission path is a symlink: {key}")
+        canonical = str(dest)
+        canonical_relative = str(dest.relative_to(target))
+        if canonical_relative != key:
+            raise ManifestError(f"migration omission path is not target-relative: {key}")
+        if key in installed_relative:
+            raise ManifestError(f"migration omission overlaps installed file: {key}")
+        if not isinstance(info, dict):
+            raise ManifestError(f"migration omission entry must be an object: {key}")
+        if info.get("ownership") != "unmanaged":
+            raise ManifestError(f"migration omission ownership must be unmanaged: {key}")
+        state = info.get("state")
+        if state not in MIGRATION_OMISSION_STATES:
+            raise ManifestError(f"invalid migration omission state for {key}")
+        legacy_sha = info.get("legacy_sha256")
+        if not isinstance(legacy_sha, str) or not _SHA_RE.match(legacy_sha):
+            raise ManifestError(f"invalid legacy_sha256 for migration omission: {key}")
+        migration_sha = info.get("migration_sha256")
+        if state == "modified":
+            if not isinstance(migration_sha, str) or not _SHA_RE.match(migration_sha):
+                raise ManifestError(f"invalid migration_sha256 for modified omission: {key}")
+        elif migration_sha is not None:
+            raise ManifestError(f"missing omission cannot carry migration_sha256: {key}")
+        normalized[canonical_relative] = {
+            "ownership": "unmanaged",
+            "state": state,
+            "legacy_sha256": legacy_sha,
+            "migration_sha256": migration_sha,
+        }
+    return normalized
+
+
+def _validate_v2_manifest(manifest, target_home: str, manifest_path: str):
+    """Return (managed_root, normalized_entries, normalized_omissions)."""
     if not isinstance(manifest, dict):
         raise ManifestError("manifest root must be an object")
     if manifest.get("schema_version") != SCHEMA_VERSION:
@@ -262,7 +328,20 @@ def validate_manifest(manifest, target_home: str, manifest_path: str):
         normalized[canonical] = info
 
     _validate_mutation_graph(target, root, normalized, manifest_path)
-    return root, normalized
+    omissions = _validate_migration_omissions(
+        target,
+        root,
+        normalized,
+        manifest.get("migration_omissions"),
+        manifest_path,
+    )
+    return root, normalized, omissions
+
+
+def validate_manifest(manifest, target_home: str, manifest_path: str):
+    """Return (managed_root, normalized_entries) or raise ManifestError."""
+    root, entries, _omissions = _validate_v2_manifest(manifest, target_home, manifest_path)
+    return root, entries
 
 
 def build_payload(repo_root: str, target_home: str):
@@ -287,6 +366,158 @@ def build_payload(repo_root: str, target_home: str):
                     (os.path.join(agents_dir, name), _dest(os.path.join(".codex", "agents", name)))
                 )
     return payload
+
+
+def _target_relative(target: Path, path: Path) -> str:
+    """Return a canonical target-home-relative path."""
+    return str(path.relative_to(target))
+
+
+def _legacy_manifest_entries(
+    manifest: dict,
+    target_home: str,
+    manifest_path: str,
+    payload_destinations: set[str],
+) -> tuple[Path, dict]:
+    """Validate the complete legacy v1 manifest before any migration write."""
+    if not isinstance(manifest, dict):
+        raise ManifestError("legacy manifest root must be an object")
+    if type(manifest.get("version")) is not int or manifest.get("version") != 1:
+        raise ManifestError("unsupported legacy manifest version")
+    installed = manifest.get("installed_files")
+    if not isinstance(installed, dict) or not installed:
+        raise ManifestError("legacy installed_files must be a non-empty object")
+
+    target = Path(target_home).resolve()
+    manifest_canon = Path(manifest_path).resolve()
+    normalized = {}
+    source_keys = {}
+    for key, info in installed.items():
+        if not isinstance(key, str) or not Path(key).is_absolute():
+            raise ManifestError("legacy installed file paths must be absolute strings")
+        if not isinstance(info, dict):
+            raise ManifestError("legacy installed_files entries must be objects")
+        raw_dest = Path(key)
+        _reject_symlink_path(target, raw_dest, "legacy installed file path")
+        dest = raw_dest.resolve()
+        if not dest.is_relative_to(target):
+            raise ManifestError(f"legacy installed file path escapes target home: {key}")
+        if dest == manifest_canon:
+            raise ManifestError(f"legacy installed file path collides with manifest: {key}")
+        if dest == target:
+            raise ManifestError("legacy installed file path collides with target home")
+        if dest.is_symlink():
+            raise ManifestError(f"legacy installed file path is a symlink: {key}")
+        canonical = str(dest)
+        if canonical in normalized:
+            raise ManifestError(
+                f"legacy installed file path collision: {key!r} and {source_keys[canonical]!r}"
+            )
+        legacy_sha = info.get("installed_sha256")
+        if not isinstance(legacy_sha, str) or not _SHA_RE.match(legacy_sha):
+            raise ManifestError(f"invalid legacy installed_sha256 for {key}")
+        legacy_sha = legacy_sha.lower()
+        backup = info.get("backup_path")
+        if backup is not None:
+            if not isinstance(backup, str):
+                raise ManifestError(f"invalid legacy backup_path for {key}")
+            raw_backup = Path(backup)
+            if not raw_backup.is_absolute():
+                raw_backup = target / raw_backup
+            _reject_symlink_path(target, raw_backup, "legacy backup path")
+            resolved_backup = raw_backup.resolve()
+            if not resolved_backup.is_relative_to(target):
+                raise ManifestError(f"legacy backup path escapes target home: {backup}")
+            if resolved_backup in (dest, target, manifest_canon):
+                raise ManifestError(f"legacy backup path collides with lifecycle path: {backup}")
+        if canonical not in payload_destinations:
+            raise ManifestError(f"legacy installed file is not current package payload: {key}")
+        source_keys[canonical] = key
+        normalized[canonical] = {
+            "legacy_sha256": legacy_sha,
+        }
+    return target, normalized
+
+
+def _migrate_v1_manifest(
+    manifest: dict,
+    repo_root: str,
+    target_home: str,
+    manifest_path: str,
+) -> dict:
+    """Build a v2 manifest from v1 without touching payload or user files."""
+    target = Path(target_home).resolve()
+    payload = build_payload(repo_root, target_home)
+    payload_destinations = {dest for _src, dest in payload}
+    _target, legacy_entries = _legacy_manifest_entries(
+        manifest,
+        target_home,
+        manifest_path,
+        payload_destinations,
+    )
+
+    installed = {}
+    omissions = {}
+    for dest, legacy in legacy_entries.items():
+        legacy_sha = legacy["legacy_sha256"]
+        path = Path(dest)
+        if path.exists():
+            if path.is_symlink() or not path.is_file():
+                raise ManifestError(f"legacy payload path is not a regular file: {dest}")
+            current_sha = sha256_of(dest)
+            if current_sha == legacy_sha:
+                installed[dest] = {
+                    "ownership": "managed",
+                    "sha256": legacy_sha,
+                    "installed_sha256": legacy_sha,
+                    "backup_path": None,
+                }
+                continue
+            omissions[_target_relative(target, path)] = {
+                "ownership": "unmanaged",
+                "state": "modified",
+                "legacy_sha256": legacy_sha,
+                "migration_sha256": current_sha,
+            }
+            continue
+        omissions[_target_relative(target, path)] = {
+            "ownership": "unmanaged",
+            "state": "missing",
+            "legacy_sha256": legacy_sha,
+            "migration_sha256": None,
+        }
+
+    migrated = {
+        "schema_version": SCHEMA_VERSION,
+        "installer_id": INSTALLER_ID,
+        "managed_root": str(target),
+        "installed_files": installed,
+        "migration_omissions": omissions,
+    }
+    # Reuse v2 validation on the complete candidate before writing it.
+    _validate_v2_manifest(migrated, target_home, manifest_path)
+    return migrated
+
+
+def cmd_migrate_manifest_v1(
+    repo_root: str,
+    target_home: str,
+    manifest_path: str,
+    dry_run: bool,
+) -> None:
+    manifest_path = str(_resolve_manifest_path(target_home, manifest_path))
+    if not os.path.exists(manifest_path):
+        raise ManifestError(f"no legacy manifest found at {manifest_path}")
+    raw = read_json(manifest_path)
+    migrated = _migrate_v1_manifest(raw, repo_root, target_home, manifest_path)
+    if dry_run:
+        for dest in migrated["installed_files"]:
+            print(f"[DRY-RUN] Would claim managed file: {dest}")
+        for rel, info in migrated["migration_omissions"].items():
+            print(f"[DRY-RUN] Would preserve {info['state']} omission: {rel}")
+        return
+    _write_manifest(manifest_path, migrated)
+    print(f"Migrated manifest v1 -> v2: {manifest_path}")
 
 
 def _plan_backup_path(dest: str, managed_root: Path, backup_root: Path) -> str:
@@ -316,17 +547,23 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
     backup_root = _package_backup_root(target)
 
     old_entries = {}
+    migration_omissions = {}
     if os.path.exists(manifest_path):
         raw = read_json(manifest_path)
-        _, old_entries = validate_manifest(raw, target_home, manifest_path)
+        _, old_entries, migration_omissions = _validate_v2_manifest(
+            raw, target_home, manifest_path
+        )
 
     payload = build_payload(repo_root, target_home)
     for src, _dest in payload:
         if not os.path.isfile(src):
             raise ManifestError(f"payload source missing: {src}")
 
+    active_payload = [
+        (src, dest) for src, dest in payload if _target_relative(target, Path(dest)) not in migration_omissions
+    ]
     new_entries = {}
-    for src, dest in payload:
+    for src, dest in active_payload:
         src_sha = sha256_of(src)
         if dest in old_entries:
             old = old_entries[dest]
@@ -343,11 +580,14 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
             "backup_path": backup,
         }
 
-    new_dest_set = {dest for _, dest in payload}
+    new_dest_set = {dest for _, dest in active_payload}
     retired = [(d, old_entries[d]) for d in old_entries if d not in new_dest_set]
 
     if dry_run:
         for src, dest in payload:
+            if _target_relative(target, Path(dest)) in migration_omissions:
+                print(f"[DRY-RUN] Skipping explicit migration omission: {dest}")
+                continue
             print(f"[DRY-RUN] Would install {src} -> {dest}")
         for dest, _old in retired:
             print(f"[DRY-RUN] Would retire {dest}")
@@ -355,7 +595,7 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
 
     # Create pre-install backups for destinations that were not previously
     # owned and already existed.
-    for src, dest in payload:
+    for src, dest in active_payload:
         info = new_entries[dest]
         backup = info.get("backup_path")
         if dest not in old_entries and backup and not os.path.exists(backup):
@@ -363,7 +603,7 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
             shutil.copy2(dest, backup)
 
     # Install the current payload.
-    for src, dest in payload:
+    for src, dest in active_payload:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copy2(src, dest)
         if os.path.basename(dest) in EXECUTABLE_PAYLOAD_NAMES:
@@ -383,15 +623,15 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
         else:
             os.remove(dest)
 
-    _write_manifest(
-        manifest_path,
-        {
-            "schema_version": SCHEMA_VERSION,
-            "installer_id": INSTALLER_ID,
-            "managed_root": str(target),
-            "installed_files": new_entries,
-        },
-    )
+    new_manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "installer_id": INSTALLER_ID,
+        "managed_root": str(target),
+        "installed_files": new_entries,
+    }
+    if migration_omissions:
+        new_manifest["migration_omissions"] = migration_omissions
+    _write_manifest(manifest_path, new_manifest)
 
 
 def cmd_verify(target_home: str, manifest_path: str) -> None:
@@ -399,7 +639,7 @@ def cmd_verify(target_home: str, manifest_path: str) -> None:
     if not os.path.exists(manifest_path):
         raise ManifestError(f"no installation manifest found at {manifest_path}")
     raw = read_json(manifest_path)
-    _, entries = validate_manifest(raw, target_home, manifest_path)
+    _, entries, _omissions = _validate_v2_manifest(raw, target_home, manifest_path)
 
     problems = 0
     for dest, info in entries.items():
@@ -420,7 +660,7 @@ def cmd_uninstall(target_home: str, manifest_path: str) -> None:
     if not os.path.exists(manifest_path):
         raise ManifestError(f"no installation manifest found at {manifest_path}")
     raw = read_json(manifest_path)
-    _, entries = validate_manifest(raw, target_home, manifest_path)
+    _, entries, _omissions = _validate_v2_manifest(raw, target_home, manifest_path)
 
     # Preflight every entry before the first mutation so a single ownership
     # ambiguity aborts the whole operation without touching anything.
@@ -449,7 +689,10 @@ def cmd_uninstall(target_home: str, manifest_path: str) -> None:
 def main(argv=None) -> int:
     argv = sys.argv if argv is None else argv
     if len(argv) < 2:
-        print("usage: installer_lifecycle.py <install|verify|uninstall> [options]", file=sys.stderr)
+        print(
+            "usage: installer_lifecycle.py <install|verify|uninstall|migrate-manifest-v1> [options]",
+            file=sys.stderr,
+        )
         return 2
 
     cmd = argv[1]
@@ -480,6 +723,17 @@ def main(argv=None) -> int:
                 print("install requires --repo-root", file=sys.stderr)
                 return 2
             cmd_install(repo_root, target_home, manifest_path, bool(opts.get("dry_run")))
+        elif cmd == "migrate-manifest-v1":
+            repo_root = opts.get("repo_root")
+            if not repo_root:
+                print("migrate-manifest-v1 requires --repo-root", file=sys.stderr)
+                return 2
+            cmd_migrate_manifest_v1(
+                repo_root,
+                target_home,
+                manifest_path,
+                bool(opts.get("dry_run")),
+            )
         elif cmd == "verify":
             cmd_verify(target_home, manifest_path)
         elif cmd == "uninstall":

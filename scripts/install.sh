@@ -6,6 +6,7 @@ set -euo pipefail
 # mutation planning are centralized in installer_lifecycle.py.
 
 DRY_RUN=0
+MIGRATE_MANIFEST_V1=0
 TARGET_HOME="${HOME}"
 
 while [[ $# -gt 0 ]]; do
@@ -14,13 +15,17 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       shift
       ;;
+    --migrate-manifest-v1)
+      MIGRATE_MANIFEST_V1=1
+      shift
+      ;;
     --target-home)
       TARGET_HOME="$2"
       shift 2
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--dry-run] [--target-home <dir>]" >&2
+      echo "Usage: $0 [--dry-run] [--migrate-manifest-v1] [--target-home <dir>]" >&2
       exit 1
       ;;
   esac
@@ -36,6 +41,20 @@ echo "=== Multi Orchestrator Installation ==="
 echo "Target Root: ${TARGET_HOME}"
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "Mode: DRY RUN (no modifications will be made)"
+fi
+
+if [[ "${MIGRATE_MANIFEST_V1}" -eq 1 ]]; then
+  echo "Mode: EXPLICIT MANIFEST v1 -> v2 MIGRATION"
+  HELPER_ARGS=(migrate-manifest-v1 --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    HELPER_ARGS+=(--dry-run)
+  fi
+  if ! python3 "${LIFECYCLE_HELPER}" "${HELPER_ARGS[@]}"; then
+    echo "[ERROR] Manifest migration aborted." >&2
+    exit 1
+  fi
+  echo "Manifest migration completed without installing payload files."
+  exit 0
 fi
 
 HELPER_ARGS=(install --repo-root "${REPO_ROOT}" --target-home "${TARGET_HOME}" --manifest-path "${MANIFEST_FILE}")
