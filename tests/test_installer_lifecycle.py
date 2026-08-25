@@ -873,6 +873,25 @@ class InstallerLifecycleTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0, self._message("unsafe migration", result))
                     self.assertEqual(self._snapshot(home), before)
 
+    def test_upgrade_migrated_environment_with_new_payload_retains_valid_provenance(self):
+        with tempfile.TemporaryDirectory(prefix="installer-upgrade-provenance-") as raw_home:
+            home = Path(raw_home)
+            self._install(home)
+            v1 = self._write_v1_manifest(home)
+            custom_key = next(key for key in v1["installed_files"] if "/.codex/agents/" in key)
+            Path(custom_key).write_bytes(b"# valid custom declaration\n" + Path(custom_key).read_bytes())
+            self._write_manifest(home, v1)
+            self.assertEqual(self._migrate(home).returncode, 0)
+            manifest = self._read_manifest(home)
+            self.assertIn("migration_provenance", manifest)
+            # Run upgrade
+            upgrade_res = self._run(INSTALL, home)
+            self.assertEqual(upgrade_res.returncode, 0, self._message("upgrade migrated", upgrade_res))
+            # Verify that provenance remains valid and all commands succeed
+            for script in (VERIFY, UNINSTALL):
+                with self.subTest(script=script.name):
+                    res = self._run(script, home)
+                    self.assertEqual(res.returncode, 0, self._message(script.name, res))
 
 if __name__ == "__main__":
     unittest.main()

@@ -981,6 +981,9 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
             for dest, state in classifications.items()
             if dest in new_entries or state == "preserved_customized"
         }
+        for dest in new_entries:
+            if dest not in classifications:
+                classifications[dest] = "new_payload"
         new_manifest["migration_provenance"] = {
             "schema_version": MIGRATION_PROVENANCE_SCHEMA,
             "from_schema_version": 1,
@@ -991,8 +994,8 @@ def cmd_install(repo_root: str, target_home: str, manifest_path: str, dry_run: b
                 for state in MIGRATION_CLASSIFICATIONS
             },
         }
+    _validate_v2_manifest(new_manifest, target_home, manifest_path)
     _write_manifest(manifest_path, new_manifest)
-
 
 def cmd_verify(target_home: str, manifest_path: str) -> None:
     manifest_path = str(_resolve_manifest_path(target_home, manifest_path))
