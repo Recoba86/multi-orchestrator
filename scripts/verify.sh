@@ -35,9 +35,34 @@ fi
 
 FAILED=0
 
+is_migration_omission() {
+  python3 - "${MANIFEST_FILE}" "${TARGET_HOME}" "$1" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest_path, target_home, candidate = sys.argv[1:4]
+try:
+    data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    omissions = data.get("migration_omissions", {})
+    target = Path(target_home).resolve()
+    rel = str(Path(candidate).resolve().relative_to(target))
+    if rel in omissions:
+        print("1")
+        sys.exit(0)
+except Exception:
+    pass
+print("0")
+PY
+}
+
 assert_file_exists() {
   local file="$1"
   if [[ ! -f "${file}" ]]; then
+    if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
+      echo "[SKIP] Explicit migration omission (absent): ${file}"
+      return 0
+    fi
     echo "[FAIL] Missing file: ${file}" >&2
     FAILED=1
   else
@@ -49,6 +74,10 @@ assert_contains() {
   local file="$1"
   local pattern="$2"
   local desc="$3"
+  if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
+    echo "[SKIP] Explicit migration omission: ${desc}"
+    return 0
+  fi
   if ! grep -qF "${pattern}" "${file}" 2>/dev/null; then
     echo "[FAIL] ${desc} (Missing '${pattern}' in ${file})" >&2
     FAILED=1
@@ -61,6 +90,10 @@ assert_not_contains() {
   local file="$1"
   local pattern="$2"
   local desc="$3"
+  if [[ "$(is_migration_omission "${file}")" == "1" ]]; then
+    echo "[SKIP] Explicit migration omission: ${desc}"
+    return 0
+  fi
   if grep -qF "${pattern}" "${file}" 2>/dev/null; then
     echo "[FAIL] ${desc} (Unexpected '${pattern}' in ${file})" >&2
     FAILED=1
@@ -215,6 +248,26 @@ manifest_path = sys.argv[12] if len(sys.argv) > 12 else ""
 target_home = Path(sys.argv[13]).resolve() if len(sys.argv) > 13 else None
 toml_failures = []
 
+omitted_paths = set()
+if manifest_path and target_home is not None:
+    try:
+        raw_manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        omitted_paths = set(raw_manifest.get("migration_omissions", {}))
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+
+def is_omitted(path):
+    if not omitted_paths:
+        return False
+    try:
+        candidate = Path(path).resolve()
+        if target_home is not None and candidate.is_relative_to(target_home):
+            rel = str(candidate.relative_to(target_home))
+            return rel in omitted_paths
+    except Exception:
+        pass
+    return False
+
 def toml_fail(path, reason):
     print(f"[FAIL] {path}: {reason}", file=sys.stderr)
     toml_failures.append(path)
@@ -224,13 +277,18 @@ def require(path, condition, reason):
         toml_fail(path, reason)
 
 def load_toml(path):
+    if not os.path.exists(path):
+        if is_omitted(path):
+            print(f"[SKIP] Explicit migration omission (absent): {path}")
+            return None
+        toml_fail(path, f"missing required file: {path}")
+        return None
     try:
         with open(path, "rb") as f:
             return tomllib.load(f)
     except (tomllib.TOMLDecodeError, OSError) as exc:
         toml_fail(path, f"TOML parse error: {exc}")
         return None
-
 expected_agents = {
     "luna_max_worker.toml": {
         "kind": "luna",
@@ -290,12 +348,14 @@ for path in agent_paths:
         agent_data[path] = parsed
 
 for path, data in agent_data.items():
+    if is_omitted(path):
+        print(f"[SKIP] Explicit migration omission: {path}")
+        continue
     filename = os.path.basename(path)
     expected = expected_agents.get(filename)
     if expected is None:
         toml_fail(path, "unexpected agent declaration")
         continue
-
     if type(data) is not dict:
         toml_fail(path, "root must be a TOML table")
         continue
