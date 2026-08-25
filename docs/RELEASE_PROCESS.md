@@ -42,7 +42,7 @@ Promotion is performed explicitly between worktrees without dirtying worktree st
 
 ```bash
 # 1. Enter the stable worktree
-cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/stable
+cd /path/to/multi-orchestrator/stable
 
 # 2. Confirm branch is main and working tree is clean
 git status
@@ -62,7 +62,7 @@ Deploying to the active Codex runtime is an explicit post-promotion step:
 
 ```bash
 # 1. From the stable worktree, execute the installer
-cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/stable
+cd /path/to/multi-orchestrator/stable
 ./scripts/install.sh
 
 # 2. Run the verifier against the active runtime
@@ -80,7 +80,7 @@ If an unexpected defect is discovered in an active runtime deployment:
 3. **Restore Known-Good Source Baseline:** In `stable/`, checkout or merge the known-good commit through an explicit Git operation.
 4. **Re-Deploy from Known-Good Source:**
    ```bash
-   cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/stable
+   cd /path/to/multi-orchestrator/stable
    ./scripts/install.sh
    ```
    *Note:* The installer preserves user modifications and restores tracked backups safely without requiring destructive manual uninstalls.

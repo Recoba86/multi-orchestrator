@@ -35,8 +35,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         self.valid_identity = {
             "mission_id": "mission-test-100",
             "skill": "sol-luna-orchestrator-v2",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
-            "git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
+            "git_toplevel": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "starting_branch": "develop",
             "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
@@ -50,7 +50,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
 
     def test_target_workspace_mismatch_fails_closed(self):
         bad_identity = dict(self.valid_identity)
-        bad_identity["git_toplevel"] = "/Users/amin/Documents/OtherProject"
+        bad_identity["git_toplevel"] = "/Users/example/Documents/OtherProject"
         ok, err = validate_mission_identity(bad_identity)
         self.assertFalse(ok)
         self.assertIn("TARGET_WORKSPACE_MISMATCH", err)
@@ -67,8 +67,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "packet_version": 1,
             "mission_id": "mission-test-100",
             "skill_invoked": "sol-luna-orchestrator-v2",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
-            "git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
+            "git_toplevel": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "user_goal": "Inspect identity"
         }
@@ -85,7 +85,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -100,7 +100,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -114,7 +114,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -129,7 +129,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-foreign-999",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -143,7 +143,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/OtherProject",
+            "workspace_root": "/Users/example/Documents/OtherProject",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -157,7 +157,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         action_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/OtherOrg/other-repo.git",
             "action_id": "act-1",
             "action": "SPAWN_CHILD",
@@ -171,7 +171,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         result_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "action_id": "act-1",
             "child_id": "scout_child_1"
@@ -189,7 +189,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         followup_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "boss_child_id": "foreign_boss_999",
             "child_result": {}
@@ -203,7 +203,7 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         decision_pkt = {
             "packet_version": 1,
             "mission_id": "mission-test-100",
-            "workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+            "workspace_root": "/Users/example/multi-orchestrator/dev",
             "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
             "boss_child_id": "sol_boss_test_100",
             "decision": "COMPLETE"
@@ -241,8 +241,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         valid_trace = {
             "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
             "workspace": {
-                "requested_workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
-                "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "requested_workspace_root": "/Users/example/multi-orchestrator/dev",
+                "actual_git_toplevel": "/Users/example/multi-orchestrator/dev",
                 "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
                 "branch_at_start": "develop",
                 "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
@@ -275,8 +275,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         bad_trace = {
             "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
             "workspace": {
-                "requested_workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
-                "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "requested_workspace_root": "/Users/example/multi-orchestrator/dev",
+                "actual_git_toplevel": "/Users/example/multi-orchestrator/dev",
                 "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
                 "branch_at_start": "develop",
                 "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
@@ -307,8 +307,8 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
         bad_trace = {
             "mission": {"mission_id": "mission-test-100", "status": "COMPLETE"},
             "workspace": {
-                "requested_workspace_root": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
-                "actual_git_toplevel": "/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev",
+                "requested_workspace_root": "/Users/example/multi-orchestrator/dev",
+                "actual_git_toplevel": "/Users/example/multi-orchestrator/dev",
                 "repository_identity": "https://github.com/Recoba86/multi-orchestrator.git",
                 "branch_at_start": "develop",
                 "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",

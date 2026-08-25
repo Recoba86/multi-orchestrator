@@ -7,9 +7,9 @@
 - `main` in `stable/` is a protected known-good baseline. Never perform routine feature, fix, or refactor implementation directly on `main`.
 
 ### Exact Filesystem Locations
-- **Source Project Root:** `/Users/amin/Documents/Witamin-Game/multi-orchestrator`
-- **Stable Worktree (branch: `main`):** `/Users/amin/Documents/Witamin-Game/multi-orchestrator/stable`
-- **Dev Worktree (branch: `develop`):** `/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev`
+- **Source Project Root:** `/path/to/multi-orchestrator`
+- **Stable Worktree (branch: `main`):** `/path/to/multi-orchestrator/stable`
+- **Dev Worktree (branch: `develop`):** `/path/to/multi-orchestrator/dev`
 - **Active Runtime Directories:** `~/.agents` and `~/.codex`
 
 ---

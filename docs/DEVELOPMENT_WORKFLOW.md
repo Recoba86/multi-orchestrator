@@ -1,10 +1,10 @@
 # Multi Orchestrator — Development Workflow Guide
 
 ## 1. Workspace & Worktree Architecture
-The Multi Orchestrator source repository uses a permanent two-worktree layout under `/Users/amin/Documents/Witamin-Game/multi-orchestrator`:
+The Multi Orchestrator source repository uses a permanent two-worktree layout under `/path/to/multi-orchestrator`:
 
 ```text
-/Users/amin/Documents/Witamin-Game/multi-orchestrator/
+/path/to/multi-orchestrator/
 ├── stable/    (Checked out on branch: main)
 └── dev/       (Checked out on branch: develop)
 ```
@@ -34,7 +34,7 @@ Both `stable/` and `dev/` share the exact same underlying Git database (`.git`),
 ### Step 1: Preflight & Workspace Check
 Always enter `dev/` and verify clean branch state:
 ```bash
-cd /Users/amin/Documents/Witamin-Game/multi-orchestrator/dev
+cd /path/to/multi-orchestrator/dev
 git status
 git branch --show-current  # Must be 'develop' (or a feature branch)
 ```

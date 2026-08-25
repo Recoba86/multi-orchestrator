@@ -37,7 +37,7 @@ NEW ACTIVE RUNTIME
 ## 3. Mandatory Safety Rules for Self-Development
 
 1. **Active Parent Isolation:** The active Parent Boss (`gpt-5.6-sol` / `grok-4.6-high`) reads its normative policy from the currently deployed `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md`. It must NOT point its own runtime configuration to `dev/`.
-2. **Worker Scope Restriction:** Subagents delegated to write code must receive `owned_files` rooted strictly in `/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev/...`. Under no circumstances may a worker own files in `~/.agents`, `~/.codex`, or `stable/`.
+2. **Worker Scope Restriction:** Subagents delegated to write code must receive `owned_files` rooted strictly in `/Users/example/multi-orchestrator/dev/...`. Under no circumstances may a worker own files in `~/.agents`, `~/.codex`, or `stable/`.
 3. **Isolated Clean-Room Testing:** When validating installers or runtime changes, subagents MUST use an isolated temporary directory:
    ```bash
    TMP_HOME="$(mktemp -d)"
@@ -54,9 +54,9 @@ NEW ACTIVE RUNTIME
 
 ## 4. Concrete Example: Adding a Routing Feature to Multi Orchestrator
 
-1. **Boss establishes plan:** Target is `/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev`.
+1. **Boss establishes plan:** Target is `/Users/example/multi-orchestrator/dev`.
 2. **Worker 1 (Scout):** Inspects `dev/core/ORCHESTRATOR_CORE.md` and `dev/docs/MODELS.md`.
-3. **Worker 2 (Standard Worker):** Modifies `dev/core/ORCHESTRATOR_CORE.md` (owned file: `/Users/amin/Documents/Witamin-Game/multi-orchestrator/dev/core/ORCHESTRATOR_CORE.md`).
+3. **Worker 2 (Standard Worker):** Modifies `dev/core/ORCHESTRATOR_CORE.md` (owned file: `/Users/example/multi-orchestrator/dev/core/ORCHESTRATOR_CORE.md`).
 4. **Worker 3 (Independent Verifier):** Runs clean-room validation with `--target-home "$TMP_HOME"`. Verifies all invariants pass.
 5. **Boss completes mission:** Commits changes to branch `develop` in `dev/`.
 6. **Promotion & Deploy (Separate Steps):**
