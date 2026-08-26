@@ -1,4 +1,4 @@
-"""Pure deterministic weighted selector for SolMode/GrokMode routing (Task 3).
+"""Pure deterministic weighted selector for SolMode/GrokMode routing (Task 3 / 3R integer-exact).
 
 Normative reference:
 docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§6)
@@ -70,7 +70,7 @@ class SelectionKey:
 class SelectionEvidence:
     """Deterministic selection audit trail and evidence."""
     selected_endpoint: str
-    bucket: float
+    bucket: int
     total_weight_units: int
     effective_candidates: tuple[str, ...]
     excluded_candidates: tuple[str, ...]
@@ -80,13 +80,11 @@ class SelectionEvidence:
 
 def _to_exact_integer_units(candidates: Sequence[CandidateWeight]) -> tuple[tuple[str, int], ...]:
     """Convert candidate weights to exact integer units via decimal normalization."""
-    # Find max decimal places among weights to determine scaling factor
     decimals: list[tuple[str, Decimal]] = []
     max_scale = 0
     for c in candidates:
         d = Decimal(str(c.weight))
         decimals.append((c.endpoint_id, d))
-        # exponent in Decimal is negative of decimal places for numbers like 87.5 (exp=-1)
         scale = -d.as_tuple().exponent if d.as_tuple().exponent < 0 else 0
         if scale > max_scale:
             max_scale = scale
@@ -106,14 +104,14 @@ def weighted_select(
     key: SelectionKey,
     exclude: Collection[str] | None = None,
 ) -> SelectionEvidence:
-    """Select a candidate deterministically using stable SHA-256 cumulative bucket walk.
+    """Select a candidate deterministically using stable SHA-256 integer-exact cumulative walk.
 
-    Pre-selection filtering:
-    - Excludes any endpoint ID in `exclude`.
-    - Eliminates duplicate candidate entries (defensive error).
-    - Validates candidate weights (defensive error).
-    - Sorts surviving candidates by exact endpoint ID for canonical bucket construction.
-    - Uses exact integer units for cumulative walk.
+    Algorithm (Task 3R integer-exact):
+    - Converts weights to exact integer units.
+    - Hashes canonical key via SHA-256.
+    - Computes exact integer bucket: bucket = (raw_int * total_units) >> 64
+      where 0 <= bucket < total_units.
+    - Walks sorted integer cumulative bounds without floating-point arithmetic.
     """
     if not isinstance(key, SelectionKey):
         raise TypeError(f"key must be a SelectionKey, got {type(key).__name__}")
@@ -158,23 +156,22 @@ def weighted_select(
     digest_bytes = hashlib.sha256(key_bytes).digest()
     digest_hex = hashlib.sha256(key_bytes).hexdigest()
 
-    # Map uniform float u in [0, 1) using first 64 bits of SHA-256
+    # Exact integer bucket mapping in [0, total_units) using 64-bit multiply-and-shift
     raw_int = int.from_bytes(digest_bytes[:8], "big")
-    u = raw_int / (2**64)
+    bucket = (raw_int * total_units) >> 64
 
-    threshold = u * total_units
     cumulative = 0
-    selected = canonical_survivors[-1].endpoint_id  # float-tail guard
+    selected = canonical_survivors[-1].endpoint_id
 
     for ep, unit_w in units_table:
         cumulative += unit_w
-        if threshold < cumulative:
+        if bucket < cumulative:
             selected = ep
             break
 
     return SelectionEvidence(
         selected_endpoint=selected,
-        bucket=u,
+        bucket=bucket,
         total_weight_units=total_units,
         effective_candidates=tuple(c.endpoint_id for c in canonical_survivors),
         excluded_candidates=tuple(sorted(excluded_found)),

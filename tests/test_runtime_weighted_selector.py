@@ -1,12 +1,14 @@
-"""Tests for pure deterministic weighted selector (Task 3).
+"""Tests for pure deterministic weighted selector (Task 3 / 3R integer-exact).
 
 Normative reference:
 docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§6)
 """
 
+import ast
 import collections
 from decimal import Decimal
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -31,6 +33,7 @@ from core.runtime_weighted_selector import (
     NoEligibleCandidateError,
     SelectionEvidence,
     SelectionKey,
+    _to_exact_integer_units,
     select_candidate,
     weighted_select,
 )
@@ -88,7 +91,61 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.policy = load_runtime_policy(CONFIG_PATH)
 
     # -------------------------------------------------------------------------
-    # 1. SAME INPUT DETERMINISM
+    # 1. BUCKET TYPE / INTEGER-EXACT CONTRACT
+    # -------------------------------------------------------------------------
+    def test_bucket_is_exact_integer(self):
+        candidates = (
+            CandidateWeight("A", 70.0),
+            CandidateWeight("B", 30.0),
+        )
+        key = SelectionKey(mission_id="m1", role="SCOUT", ordinal=0, mode=SOL_MODE)
+        res = weighted_select(candidates, key)
+        self.assertIsInstance(res.bucket, int)
+        self.assertNotIsInstance(res.bucket, bool)
+
+    # -------------------------------------------------------------------------
+    # 2. EXACT INTEGER FORMULA: bucket == (raw_int * total_units) >> 64
+    # -------------------------------------------------------------------------
+    def test_exact_integer_formula(self):
+        candidates = (
+            CandidateWeight("ALPHA", 70.0),
+            CandidateWeight("BETA", 30.0),
+        )
+        key = SelectionKey(mission_id="test-formula-key", role="SCOUT", ordinal=5, mode=SOL_MODE)
+        res = weighted_select(candidates, key)
+        digest = hashlib.sha256(key.canonical_bytes()).digest()
+        raw_int = int.from_bytes(digest[:8], "big")
+        total_units = res.total_weight_units
+        expected_bucket = (raw_int * total_units) >> 64
+        self.assertEqual(res.bucket, expected_bucket)
+        self.assertGreaterEqual(res.bucket, 0)
+        self.assertLess(res.bucket, total_units)
+
+    # -------------------------------------------------------------------------
+    # 3 & 4. BOUNDARY TESTS (raw_int=0 and raw_int=2**64 - 1)
+    # -------------------------------------------------------------------------
+    def test_integer_boundary_calculation_bounds(self):
+        total_units = 1000
+        # raw_int = 0
+        min_bucket = (0 * total_units) >> 64
+        self.assertEqual(min_bucket, 0)
+        # raw_int = 2**64 - 1
+        max_raw = (1 << 64) - 1
+        max_bucket = (max_raw * total_units) >> 64
+        self.assertEqual(max_bucket, total_units - 1)
+
+    # -------------------------------------------------------------------------
+    # 5. NO FLOAT IN SOURCE / AST (Source guard)
+    # -------------------------------------------------------------------------
+    def test_no_float_division_in_selector_decision(self):
+        import core.runtime_weighted_selector as mod
+        source = inspect.getsource(mod.weighted_select)
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                self.fail(f"Found forbidden floating-point division in weighted_select at line {node.lineno}")
+    # -------------------------------------------------------------------------
+    # 6. SAME INPUT DETERMINISM
     # -------------------------------------------------------------------------
     def test_same_input_determinism(self):
         candidates = (
@@ -105,7 +162,7 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.assertEqual(res1.selection_key_digest, res2.selection_key_digest)
 
     # -------------------------------------------------------------------------
-    # 2. ORDINAL PARTICIPATION
+    # 7. ORDINAL PARTICIPATION
     # -------------------------------------------------------------------------
     def test_ordinal_participation(self):
         candidates = (
@@ -123,7 +180,7 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.assertIn("B", results)
 
     # -------------------------------------------------------------------------
-    # 3. MISSION PARTICIPATION
+    # 8. MISSION PARTICIPATION
     # -------------------------------------------------------------------------
     def test_mission_participation(self):
         candidates = (
@@ -138,7 +195,7 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.assertEqual(len(digests), 10)
 
     # -------------------------------------------------------------------------
-    # 4. MODE PARTICIPATION
+    # 9. MODE PARTICIPATION
     # -------------------------------------------------------------------------
     def test_mode_participation(self):
         candidates = (
@@ -152,7 +209,7 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.assertNotEqual(res_sol.selection_key_digest, res_grok.selection_key_digest)
 
     # -------------------------------------------------------------------------
-    # 5. ROLE PARTICIPATION
+    # 10. ROLE PARTICIPATION
     # -------------------------------------------------------------------------
     def test_role_participation(self):
         candidates = (
@@ -166,7 +223,7 @@ class PureWeightedSelectorTests(unittest.TestCase):
         self.assertNotEqual(res_scout.selection_key_digest, res_worker.selection_key_digest)
 
     # -------------------------------------------------------------------------
-    # 6. CROSS-PROCESS STABILITY (PYTHONHASHSEED independence)
+    # 11. CROSS-PROCESS STABILITY (PYTHONHASHSEED independence)
     # -------------------------------------------------------------------------
     def test_cross_process_stability(self):
         code = """
@@ -180,7 +237,8 @@ from core.runtime_weighted_selector import SelectionKey, weighted_select
 
 candidates = (CandidateWeight("A", 70.0), CandidateWeight("B", 30.0))
 key = SelectionKey("fixed-mission", "SCOUT", 42, SOL_MODE)
-print(weighted_select(candidates, key).selected_endpoint)
+res = weighted_select(candidates, key)
+print(f"{res.selected_endpoint}:{res.bucket}")
 """
         outputs = set()
         for seed in ("0", "42", "random", "123456"):
@@ -195,28 +253,28 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertEqual(len(outputs), 1)
 
     # -------------------------------------------------------------------------
-    # 7. KNOWN HASH / SELECTION VECTOR
+    # 12. KNOWN HASH / SELECTION VECTOR (Integer Exact)
     # -------------------------------------------------------------------------
-    def test_known_selection_vector(self):
+    def test_known_selection_vector_integer_exact(self):
         key = SelectionKey(mission_id="canonical-test-mission", role="SCOUT", ordinal=0, mode=SOL_MODE)
         candidates = (
             CandidateWeight("ALPHA", 50.0),
             CandidateWeight("BETA", 50.0),
         )
         res = weighted_select(candidates, key)
-        # Expected SHA-256 for canonical key encoding:
         key_bytes = key.canonical_bytes()
         expected_digest = hashlib.sha256(key_bytes).hexdigest()
         self.assertEqual(res.selection_key_digest, expected_digest)
-        # Canonical order: ALPHA (500 units), BETA (500 units). Total = 1000 units.
         raw_int = int.from_bytes(hashlib.sha256(key_bytes).digest()[:8], "big")
-        u = raw_int / (2**64)
-        threshold = u * 1000.0
-        expected_winner = "ALPHA" if threshold < 500.0 else "BETA"
+        total_units = 1000
+        expected_bucket = (raw_int * total_units) >> 64
+        self.assertEqual(res.bucket, expected_bucket)
+        # ALPHA has units 0..499, BETA has units 500..999
+        expected_winner = "ALPHA" if expected_bucket < 500 else "BETA"
         self.assertEqual(res.selected_endpoint, expected_winner)
 
     # -------------------------------------------------------------------------
-    # 9. ORDER INDEPENDENCE
+    # 13. ORDER INDEPENDENCE
     # -------------------------------------------------------------------------
     def test_candidate_order_independence(self):
         key = SelectionKey(mission_id="order-test", role="WORKER", ordinal=7, mode=SOL_MODE)
@@ -240,9 +298,10 @@ print(weighted_select(candidates, key).selected_endpoint)
         res3 = weighted_select(list3, key)
         self.assertEqual(res1.selected_endpoint, res2.selected_endpoint)
         self.assertEqual(res2.selected_endpoint, res3.selected_endpoint)
+        self.assertEqual(res1.bucket, res2.bucket)
 
     # -------------------------------------------------------------------------
-    # 10. EXACT HALF-PERCENT REPRESENTATION (87.5 / 12.5)
+    # 14. EXACT HALF-PERCENT REPRESENTATION (87.5 / 12.5)
     # -------------------------------------------------------------------------
     def test_exact_half_percent_representation(self):
         key = SelectionKey(mission_id="m1", role="SCOUT", ordinal=0, mode=GROK_MODE)
@@ -251,12 +310,12 @@ print(weighted_select(candidates, key).selected_endpoint)
             CandidateWeight("STEP_3_7_FLASH", 12.5),
         )
         res = weighted_select(candidates, key)
-        # 87.5 and 12.5 scaled by 10 -> 875 and 125 units, sum = 1000 units
         self.assertEqual(res.total_weight_units, 1000)
         self.assertIn(res.selected_endpoint, ("GEMINI_FLASH_HIGH", "STEP_3_7_FLASH"))
+        self.assertIsInstance(res.bucket, int)
 
     # -------------------------------------------------------------------------
-    # 11. DISTRIBUTION — SCOUT (70 / 20 / 10)
+    # 15. DISTRIBUTION — SCOUT (70 / 20 / 10)
     # -------------------------------------------------------------------------
     def test_distribution_scout_70_20_10(self):
         candidates = (
@@ -276,7 +335,7 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertAlmostEqual(counts["STEP_3_7_FLASH"] / n, 0.10, delta=0.02)
 
     # -------------------------------------------------------------------------
-    # 12. DISTRIBUTION — WORKER (50 / 35 / 15)
+    # 16. DISTRIBUTION — WORKER (50 / 35 / 15)
     # -------------------------------------------------------------------------
     def test_distribution_worker_50_35_15(self):
         candidates = (
@@ -296,7 +355,7 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertAlmostEqual(counts["STEP_3_7_FLASH"] / n, 0.15, delta=0.02)
 
     # -------------------------------------------------------------------------
-    # 13. DISTRIBUTION — OX TABLE (30 / 35 / 25 / 10)
+    # 17. DISTRIBUTION — OX TABLE (30 / 35 / 25 / 10)
     # -------------------------------------------------------------------------
     def test_distribution_ox_table_30_35_25_10(self):
         candidates = (
@@ -318,7 +377,7 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertAlmostEqual(counts["STEP_3_7_FLASH"] / n, 0.10, delta=0.02)
 
     # -------------------------------------------------------------------------
-    # 14. FILTERED RENORMALIZATION (60 : 25 : 10(unverified) : 5 -> 60:25:5 / 90)
+    # 18. FILTERED RENORMALIZATION (60 : 25 : 10(unverified) : 5 -> 60:25:5 / 90)
     # -------------------------------------------------------------------------
     def test_filtered_renormalization_60_25_5(self):
         candidates = (
@@ -335,16 +394,12 @@ print(weighted_select(candidates, key).selected_endpoint)
             counts[res.selected_endpoint] += 1
 
         self.assertEqual(counts["PLUS_LUNA_XHIGH"], 0)
-        # Expected relative ratios over 90 total:
-        # GROK: 60/90 = 0.6667
-        # GEMINI: 25/90 = 0.2778
-        # STEP: 5/90 = 0.0556
         self.assertAlmostEqual(counts["GROK_4_6_HIGH"] / n, 60.0 / 90.0, delta=0.02)
         self.assertAlmostEqual(counts["GEMINI_FLASH_HIGH"] / n, 25.0 / 90.0, delta=0.02)
         self.assertAlmostEqual(counts["STEP_3_7_FLASH"] / n, 5.0 / 90.0, delta=0.02)
 
     # -------------------------------------------------------------------------
-    # 15 & 16. POLICY-DRIVEN UNVERIFIED FILTER & NO SILENT LUNA SUBSTITUTION
+    # 19 & 20. POLICY-DRIVEN UNVERIFIED FILTER & NO SILENT LUNA SUBSTITUTION
     # -------------------------------------------------------------------------
     def test_select_candidate_with_policy_filters_unverified(self):
         deep_table = weights_for(self.policy, "DEEP_WORKER", SOL_MODE, False)
@@ -353,11 +408,10 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertNotIn("PLUS_LUNA_XHIGH", res.effective_candidates)
         self.assertIn("PLUS_LUNA_XHIGH", res.excluded_candidates)
         self.assertNotEqual(res.selected_endpoint, "PLUS_LUNA_XHIGH")
-        # Ensure PLUS_LUNA is NOT selected (not in Deep Worker table)
         self.assertNotEqual(res.selected_endpoint, "PLUS_LUNA")
 
     # -------------------------------------------------------------------------
-    # 17 & 18. EXPLICIT AND MULTIPLE EXCLUSIONS
+    # 21 & 22. EXPLICIT AND MULTIPLE EXCLUSIONS
     # -------------------------------------------------------------------------
     def test_explicit_and_multiple_exclusions(self):
         candidates = (
@@ -372,7 +426,7 @@ print(weighted_select(candidates, key).selected_endpoint)
         self.assertEqual(set(res.excluded_candidates), {"A", "C"})
 
     # -------------------------------------------------------------------------
-    # 19. FAIL-CLOSED ON EMPTY SET AFTER FILTERING
+    # 23. FAIL-CLOSED ON EMPTY SET AFTER FILTERING
     # -------------------------------------------------------------------------
     def test_fail_closed_empty_candidates(self):
         key = SelectionKey(mission_id="m1", role="WORKER", ordinal=0, mode=SOL_MODE)
@@ -384,7 +438,7 @@ print(weighted_select(candidates, key).selected_endpoint)
             weighted_select(candidates, key, exclude={"A"})
 
     # -------------------------------------------------------------------------
-    # 20. SINGLE ELIGIBLE CANDIDATE
+    # 24. SINGLE ELIGIBLE CANDIDATE
     # -------------------------------------------------------------------------
     def test_single_candidate(self):
         key = SelectionKey(mission_id="m1", role="WORKER", ordinal=0, mode=SOL_MODE)
