@@ -1,0 +1,261 @@
+# Declarative runtime routing configuration for SolMode and GrokMode (Phase 1B Task 2)
+#
+# NORMATIVE SPEC: docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md
+# DO NOT MODIFY weights or topology without spec amendment and validation pass.
+
+schema_version: 1
+
+# Resource and capacity failure domains (for health status and quota tracking)
+failure_domains:
+  gpt_plus:
+    - "SOL_HIGH"
+    - "PLUS_LUNA"
+    - "PLUS_LUNA_XHIGH"
+  gemini:
+    - "GEMINI_FLASH_HIGH"
+  supergrok:
+    - "GROK_4_6_HIGH"
+  opus:
+    - "OPUS_4_6_THINKING"
+  cheap:
+    - "STEP_3_7_FLASH"
+  ox_combo:
+    - "OX_ALPHA"
+
+# Reviewer independence groups (used to enforce implementer != reviewer family)
+# OCG_LUNA has an independent capacity domain (opencode_go_capacity) but belongs to gpt_family
+independence_groups:
+  gpt_family:
+    - "SOL_HIGH"
+    - "PLUS_LUNA"
+    - "PLUS_LUNA_XHIGH"
+    - "OCG_LUNA"
+  gemini:
+    - "GEMINI_FLASH_HIGH"
+  supergrok:
+    - "GROK_4_6_HIGH"
+  opus:
+    - "OPUS_4_6_THINKING"
+  cheap:
+    - "STEP_3_7_FLASH"
+  ox_combo:
+    - "OX_ALPHA"
+
+# Global rolling telemetry targets (percentages, reporting only, sum: 100)
+global_targets:
+  gemini: 45.0
+  supergrok: 25.0
+  gpt_plus: 17.0
+  cheap: 7.0
+  opus: 6.0
+
+# Opportunistic OX overlay toggle state: enabled | disabled | auto
+ox_overlay: auto
+
+# Endpoint resolution metadata
+endpoint_resolution:
+  GEMINI_FLASH_HIGH:
+    model: "nine-router/ag/gemini-3.7-flash-high"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+  PLUS_LUNA:
+    model: "gpt-5.6-luna"
+    effort: "max"
+    verified: true
+    eligibility: "eligible"
+  PLUS_LUNA_XHIGH:
+    model: "gpt-5.6-luna"
+    effort: "xhigh"
+    verified: false
+    eligibility: "unverified"
+  OCG_LUNA:
+    model: "opencode-go-responses/gpt-5.6-luna"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+  STEP_3_7_FLASH:
+    model: "nine-router/stepplan/step-3.7-flash"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+  GROK_4_6_HIGH:
+    model: "nine-router/gcli/grok-4.6-high"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+  OPUS_4_6_THINKING:
+    model: "nine-router/ag/claude-opus-4-6-thinking"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+  OX_ALPHA:
+    model: "nine-router/OX-ALpha"
+    effort: "default"
+    verified: true
+    eligibility: "eligible"
+  SOL_HIGH:
+    model: "gpt-5.6-sol"
+    effort: "high"
+    verified: true
+    eligibility: "eligible"
+
+# Boss priority chains (fallback sequence, not weighted)
+boss_chains:
+  SolMode:
+    - "SOL_HIGH"
+    - "GROK_4_6_HIGH"
+    - "OPUS_4_6_THINKING"
+    - "GEMINI_FLASH_HIGH"
+  GrokMode:
+    - "GROK_4_6_HIGH"
+    - "OPUS_4_6_THINKING"
+    - "GEMINI_FLASH_HIGH"
+
+# Weighted selection tables per role, mode, and overlay status (weights sum to exactly 100)
+role_weights:
+  SCOUT:
+    SolMode:
+      base:
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 70.0
+        - endpoint: "PLUS_LUNA"
+          weight: 20.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 10.0
+    GrokMode:
+      base:
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 87.5
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 12.5
+
+  STANDARD_WORKER:
+    SolMode:
+      base:
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 50.0
+        - endpoint: "PLUS_LUNA"
+          weight: 35.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 15.0
+      overlay:
+        - endpoint: "OX_ALPHA"
+          weight: 30.0
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 35.0
+        - endpoint: "PLUS_LUNA"
+          weight: 25.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 10.0
+    GrokMode:
+      base:
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 75.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 25.0
+      overlay:
+        - endpoint: "OX_ALPHA"
+          weight: 30.0
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 55.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 15.0
+
+  DEEP_WORKER:
+    SolMode:
+      base:
+        - endpoint: "GROK_4_6_HIGH"
+          weight: 60.0
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 25.0
+        - endpoint: "PLUS_LUNA_XHIGH"
+          weight: 10.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 5.0
+    GrokMode:
+      base:
+        - endpoint: "GROK_4_6_HIGH"
+          weight: 67.0
+        - endpoint: "GEMINI_FLASH_HIGH"
+          weight: 28.0
+        - endpoint: "STEP_3_7_FLASH"
+          weight: 5.0
+
+# Reviewer tables (keyed by implementer independence group and routing mode)
+reviewer_tables:
+  gpt_family:
+    SolMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 65.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 25.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0
+    GrokMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 65.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 25.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0
+
+  supergrok:
+    SolMode:
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 60.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 20.0
+      - endpoint: "PLUS_LUNA"
+        weight: 20.0
+    GrokMode:
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 75.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 25.0
+
+  gemini:
+    SolMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 60.0
+      - endpoint: "PLUS_LUNA"
+        weight: 25.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 15.0
+    GrokMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 75.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 25.0
+
+  cheap:
+    SolMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 60.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 30.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0
+    GrokMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 60.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 30.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0
+
+  ox_combo:
+    SolMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 60.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 30.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0
+    GrokMode:
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 60.0
+      - endpoint: "GEMINI_FLASH_HIGH"
+        weight: 30.0
+      - endpoint: "OPUS_4_6_THINKING"
+        weight: 10.0

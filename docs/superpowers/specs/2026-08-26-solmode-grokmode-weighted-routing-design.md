@@ -206,15 +206,15 @@ Explicit policy (NOT derived by accidental normalization):
 
 | Candidate | Weight |
 |---|---|
-| Gemini High | 70 |
-| Step 3.7 Flash | 30 |
+| Gemini High | 75 |
+| Step 3.7 Flash | 25 |
 
 This base table is REQUIRED and contains NO OX entry: with
 `ox_overlay: disabled`, or `auto` while the `ox_combo` domain is in cooldown,
 GrokMode Standard Worker dispatch resolves against this table, so OX can
 disappear in GrokMode without code changes. It is an explicit declaration,
 never derived by removing the OX row from §5.5 and renormalizing. Sum: 100.
-Phase-0 design choice: the 70/30 split is not operator-approved mission data;
+Phase-0 design choice: the 75/25 split is the operator-approved baseline;
 it extrapolates SolMode's Gemini-dominant base posture into the GPT-less
 pool. The operator MAY override these two numbers in
 `config/runtime-routing.yaml` before activation; schema validation only
@@ -458,9 +458,9 @@ Contradiction scan performed against the approved mission text:
 - **FOUND AND RESOLVED (independent review):** GrokMode STANDARD_WORKER had an
   overlay table (§5.5) but no base table, leaving `disabled`/`auto`-off
   undefined in GrokMode. Added explicit non-OX base table §5.5a
-  (Gemini 70 / Step 30), design choice documented inline.
+  (Gemini 75 / Step 25), design choice documented inline.
 - Weight sums: 70+20+10=100; 87.5+12.5=100; 50+35+15=100; 30+35+25+10=100;
-  30+55+15=100; 70+30=100 (§5.5a); 60+25+10+5=100; 67+28+5=100; reviewer rows
+  30+55+15=100; 75+25=100 (§5.5a); 60+25+10+5=100; 67+28+5=100; reviewer rows
   65+25+10=100, 60+20+20=100, 75+25=100, 60+25+15=100, 60+30+10=100. OK.
 - Sol-as-worker prohibition vs SolMode Boss chain: disjoint planes. OK.
 - Reviewer table lists post-exclusion survivors only; Luna column absent from

@@ -181,7 +181,7 @@ Cases (each asserts accept or exact rejection prefix + substring):
 1. Shipped `config/runtime-routing.yaml` loads successfully into `RuntimePolicy`.
 2. Spec §5 weight tables byte-match YAML: scout/sol 70/20/10; scout/grok
    87.5/12.5; worker base/sol 50/35/15; worker overlay/sol 30/35/25/10;
-   worker overlay/grok 30/55/15; worker base/grok 70/30 (§5.5a);
+   worker overlay/grok 30/55/15; worker base/grok 75/25 (§5.5a);
    deep/sol 60/25/10+5; deep/grok 67/28+5.
 3. Reviewer rows match spec §5.8 for all six (implementer_independence_group,
    mode) keys.
@@ -194,7 +194,7 @@ Cases (each asserts accept or exact rejection prefix + substring):
    OPUS_4_6_THINKING, GEMINI_FLASH_HIGH)`.
 9. `ox_overlay: banana` → rejected; three legal values parse.
 10. `weights_for(worker, grok, True)` returns the explicit 30/55/15 table and
-    `weights_for(worker, grok, False)` returns the explicit 70/30 §5.5a base
+    `weights_for(worker, grok, False)` returns the explicit 75/25 §5.5a base
     (proves both are declared, not derived).
 11. Independence groups: `group_of(policy, "OCG_LUNA") == "gpt_family"`;
     removing the `gpt_family` entry from the YAML → INVALID_RUNTIME_POLICY;
@@ -389,7 +389,7 @@ Gate: full suite green; commit contains only these two files.
   2. SCOUT never yields GROK/SOL/OPUS endpoints in either mode (10k draws).
   3. STANDARD_WORKER: sol base vs overlay produce different selected sets;
      overlay includes OX_ALPHA at ≈30% (±0.02).
-  4. GrokMode STANDARD_WORKER: overlay inactive → §5.5a base ≈70/30, zero OX;
+  4. GrokMode STANDARD_WORKER: overlay inactive → §5.5a base ≈75/25, zero OX;
      overlay active → ≈30/55/15; scout/deep grok_mode draws contain zero
      PLUS_LUNA/SOL_HIGH/PLUS_LUNA_XHIGH (10k draws each).
   5. DEEP_WORKER grok-mode ≈67/28/5 (±0.02).
