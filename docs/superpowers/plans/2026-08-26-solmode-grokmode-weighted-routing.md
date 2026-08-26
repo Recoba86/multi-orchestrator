@@ -37,16 +37,15 @@
 **Interfaces:**
 - Consumes: nothing (stdlib only).
 - Produces:
-  - `RoutingMode` enum: `SOL_MODE = "sol_mode"`, `GROK_MODE = "grok_mode"`
+  - `RoutingMode` enum: `SOL_MODE = "SolMode"`, `GROK_MODE = "GrokMode"`
   - `MODE_STATE_PATH_DEFAULT: Path` = `~/.agents/runtime-routing/mode.json`
   - `read_mode(state_path: Path = MODE_STATE_PATH_DEFAULT) -> RoutingMode`
-    — missing/corrupt/unknown value → `SOL_MODE` plus anomaly sidecar
-    `<state_path>.anomaly` recording reason (`missing|corrupt|unknown_value`);
-    never raises on bad content.
+    — missing/corrupt/unknown value → `SOL_MODE` with zero filesystem mutation
+    (no anomaly sidecars created); never raises on bad content.
   - `write_mode(mode: RoutingMode, state_path: Path = MODE_STATE_PATH_DEFAULT) -> None`
-    — atomic write (tmp file + `os.replace`), parents created.
-  - CLI `python3 scripts/orchestrator_mode.py status|set sol|grok`
-    (optional `--state-path`); `set` is the only writer; prints resolved mode
+    — atomic write (tmp file + `os.replace`, 0600 file mode, 0700 dir), parents created.
+  - CLI `python3 scripts/orchestrator_mode.py status|SolMode|GrokMode`
+    (optional `--state-path`); `SolMode`/`GrokMode` are the only writers; prints resolved mode
     and state path; exit 0 on success.
 
 - [ ] **Step 1: Write failing tests**
@@ -94,11 +93,11 @@ class ModeCliTests(unittest.TestCase):
             home = Path(d)
             r1 = self.run_cli("status", home=home)
             self.assertEqual(r1.returncode, 0)
-            self.assertIn("sol_mode", r1.stdout)
-            r2 = self.run_cli("set", "grok", home=home)
+            self.assertIn("SolMode", r1.stdout)
+            r2 = self.run_cli("GrokMode", home=home)
             self.assertEqual(r2.returncode, 0)
             r3 = self.run_cli("status", home=home)
-            self.assertIn("grok_mode", r3.stdout)
+            self.assertIn("GrokMode", r3.stdout)
 ```
 
 - [ ] **Step 2: Run tests, verify FAIL**
@@ -107,11 +106,11 @@ Expected: FAIL — `ModuleNotFoundError: core.runtime_routing_mode`.
 
 - [ ] **Step 3: Minimal implementation**
 
-`core/runtime_routing_mode.py`: enum, atomic read/write per contract,
-anomaly sidecar JSON `{"reason": ..., "observed": ..., "resolved": ...}`.
+`core/runtime_routing_mode.py`: enum (`SolMode`/`GrokMode`), atomic read/write per contract,
+strict schema validation, zero filesystem mutation on reads.
 
-`scripts/orchestrator_mode.py`: argparse subcommands `status` / `set`;
-`set` accepts only `sol`|`grok`, maps to enum values; imports core module.
+`scripts/orchestrator_mode.py`: argparse subcommands `status` / `SolMode` / `GrokMode`;
+imports core module.
 
 - [ ] **Step 4: Run tests, verify PASS** — same command, all green.
 
@@ -164,7 +163,7 @@ no other files touched (`git status --short` shows exactly the three files).
     `"INVALID_RUNTIME_POLICY: "` on any of: unknown top-level keys; negative
     weights; role table sum ≠ 100 (tolerance 1e-9); Sol endpoint present in
     SCOUT/STANDARD_WORKER/DEEP_WORKER tables (either mode); Grok/Sol/Opus in
-    SCOUT tables; any gpt_plus endpoint id in a grok_mode table;
+    SCOUT tables; any gpt_plus endpoint id in a GrokMode table;
     `nine-router/cx/*` model strings anywhere; unknown `ox_overlay` value
     (allowed: `enabled`, `disabled`, `auto`); reviewer table weights not
     summing to 100; `independence_groups` entry referencing an endpoint id
@@ -287,9 +286,9 @@ def weighted_select(candidates, key):
 - [ ] **Step 1: Write failing tests**
 
 1. Determinism: same key twice → identical candidate object.
-2. Known-vector: for `[(a,50),(b,50)]`, key `(sol_mode,"m1","SCOUT",0)`,
+2. Known-vector: for `[(a,50),(b,50)]`, key `(SolMode,"m1","SCOUT",0)`,
    independently compute expected winner inline in the test from sha256 of
-   `"sol_mode|m1|SCOUT|0"` and assert equality.
+   canonical JSON key and assert equality.
 3. Distribution: `[(g,70),(l,20),(s,10)]`, ordinals 0..9999 fixed mission:
    empirical share within ±0.02 absolute of .70/.20/.10.
 4. Stability: result for ordinal 5 unchanged regardless of other ordinals
@@ -342,8 +341,8 @@ Gate: distribution convergence + determinism proven by tests.
 - [ ] **Step 1: Write failing tests**: sol chain order matches spec §2.2;
   grok chain matches §2.3 and structurally contains zero gpt_plus endpoints
   even though sol's does; healthy domains → sol selects SOL_HIGH; gpt_plus
-  cooldown in sol_mode → skips to GROK_4_6_HIGH with recorded exclusion;
-  grok_mode ignores health entirely for gpt_plus (absent by construction);
+  cooldown in SolMode → skips to GROK_4_6_HIGH with recorded exclusion;
+  GrokMode ignores health entirely for gpt_plus (absent by construction);
   legacy map equals current wrapper bindings verbatim; decision is immutable
   (frozen dataclass).
 - [ ] **Step 2: Run tests, verify FAIL**
@@ -380,7 +379,7 @@ Gate: full suite green; commit contains only these two files.
     through the §6 cumulative walk; raises `POLICY_ENDPOINT_UNVERIFIED` ONLY
     if filtering leaves an empty candidate set; records every filtered
     endpoint in `excluded_unverified`.
-  - GrokMode structural guard: any resolved gpt_plus endpoint in grok_mode
+  - GrokMode structural guard: any resolved gpt_plus endpoint in GrokMode
     raises `MODE_EXCLUDED_GPT_PLUS` (never reachable with shipped tables;
     guards config regressions).
 
@@ -390,12 +389,12 @@ Gate: full suite green; commit contains only these two files.
   3. STANDARD_WORKER: sol base vs overlay produce different selected sets;
      overlay includes OX_ALPHA at ≈30% (±0.02).
   4. GrokMode STANDARD_WORKER: overlay inactive → §5.5a base ≈75/25, zero OX;
-     overlay active → ≈30/55/15; scout/deep grok_mode draws contain zero
+     overlay active → ≈30/55/15; scout/deep GrokMode draws contain zero
      PLUS_LUNA/SOL_HIGH/PLUS_LUNA_XHIGH (10k draws each).
   5. DEEP_WORKER grok-mode ≈67/28/5 (±0.02).
   6. Every returned (model, effort) pair matches policy endpoint_resolution.
   7. Unverified rule (spec §13.1): with PLUS_LUNA_XHIGH marked unverified,
-     DEEP_WORKER/sol_mode excludes it BEFORE the walk; empirical shares over
+     DEEP_WORKER/SolMode excludes it BEFORE the walk; empirical shares over
      10k keys renormalize to Grok 60/90≈0.667, Gemini 25/90≈0.278,
      Step 5/90≈0.056 (±0.02); each DispatchDecision carries
      `excluded_unverified=("PLUS_LUNA_XHIGH",)`; a fixture whose survivors are
@@ -502,7 +501,7 @@ full unittest suite green.
        and an OCG_LUNA implementer can never be reviewed by Sol or Plus
        Lunas. Group membership is data in `runtime-routing.yaml`, extensible
        without code change;
-    3. mode eligibility — drop gpt_plus candidates in grok_mode;
+    3. mode eligibility — drop gpt_plus candidates in GrokMode;
     4. health eligibility — `domain_eligible(capacity_domain)` per candidate
        (capacity-domain membership drives ONLY health filtering here, never
        an earlier reviewer-exclusion stage);
@@ -521,10 +520,10 @@ full unittest suite green.
      excluded by the group stage despite different failure domain;
      implementer OCG_LUNA → SOL_HIGH and PLUS_LUNA both excluded; trace
      records reason `INDEPENDENCE_GROUP` for each exclusion.
-  3. Grok implementer, sol_mode → Gemini 60 / Opus 20 / Luna 20.
-  4. Grok implementer, grok_mode → Gemini 75 / Opus 25 (no Luna).
-  5. Gemini implementer, sol_mode → Grok 60 / Luna 25 / Opus 15.
-  6. Gemini implementer, grok_mode → Grok 75 / Opus 25.
+  3. Grok implementer, SolMode → Gemini 60 / Opus 20 / Luna 20.
+  4. Grok implementer, GrokMode → Gemini 75 / Opus 25 (no Luna).
+  5. Gemini implementer, SolMode → Grok 60 / Luna 25 / Opus 15.
+  6. Gemini implementer, GrokMode → Grok 75 / Opus 25.
   7. STEP implementer → Grok 60 / Gemini 30 / Opus 10; OX implementer → same.
   8. All survivors unhealthy → REVIEWER_CHAIN_EXHAUSTED, selected None.
   9. Cross-check with existing validator:
@@ -561,25 +560,24 @@ Gate: tests 1–2 prove the Sol-implementer-never-reviewed-by-Luna invariant.
 **Interfaces:**
 - Consumes: `FailureDomain` declarations (Task 2).
 - Produces:
-  - `DomainHealth` enum: `ELIGIBLE`, `COOLDOWN`.
+  - `DomainHealthState` enum: `ELIGIBLE`, `COOLDOWN`.
   - `HEALTH_STATE_PATH_DEFAULT = ~/.agents/runtime-routing/health.json`.
-  - `record_quota_exhaustion(domain: str, now_utc: datetime,
-    cooldown: timedelta = timedelta(minutes=30), path=...) -> None`
-    — sets COOLDOWN(until=now+cooldown) for THAT domain only.
-  - `record_transient_error(domain: str, path=...) -> None` — MUST NOT change
-    eligibility state (telemetry hook; enforced by test).
-  - `domain_eligible(domain: str, now_utc: datetime | None = None, path=...)
-    -> bool` — expired cooldown lazily restores ELIGIBLE and prunes the file;
-    corrupt/missing file → all eligible (+ anomaly sidecar).
+  - `FailureKind` enum: `HTTP_429`, `HTTP_503`, `TIMEOUT`, `QUOTA_EXHAUSTED`.
+  - `record_failure(domain: str, failure_kind: FailureKind, now: int | None = None,
+    cooldown_seconds: int = 1800, path=...) -> None`
+    — sets COOLDOWN(until=now+cooldown) for THAT domain only using exact integer timestamps.
+  - `domain_eligible(domain: str, now: int | None = None, path=...) -> bool`
+    — zero-mutation read; expired cooldown automatically evaluates as ELIGIBLE;
+    corrupt/missing/symlinked file → fail closed to ELIGIBLE without creating files or sidecars.
   - `clear_health(path=...) -> None` (operator reset).
   - Hard invariant: this module never imports or writes mode state — a test
     greps the module source for forbidden tokens (`write_mode`, `RoutingMode`)
     and fails if found.
 
-- [ ] **Step 1: Failing tests**: quota exhaustion on gpt_plus makes
-  `domain_eligible("gpt_plus")` False while gemini stays True; transient
-  error leaves ELIGIBLE; expired cooldown restores True without touching mode
-  file; corrupt health JSON → eligible + anomaly; clear_health resets;
+- [ ] **Step 1: Failing tests**: quota exhaustion or 429/503/timeout on gpt_plus makes
+  `domain_eligible("gpt_plus")` False while gemini stays True;
+  expired cooldown restores True without touching mode
+  file; corrupt health JSON → eligible without sidecars; clear_health resets;
   source-grep invariant passes.
 - [ ] **Step 2: Run tests, verify FAIL**
 Run: `python3 -m unittest tests.test_runtime_routing_health -v`

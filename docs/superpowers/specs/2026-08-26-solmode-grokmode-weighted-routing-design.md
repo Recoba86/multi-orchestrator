@@ -37,13 +37,13 @@ Exactly two modes exist:
 
 | Mode | Meaning |
 |---|---|
-| `sol_mode` | GPT Plus (Sol/Luna) family fully eligible |
-| `grok_mode` | Entire `gpt_plus` failure domain excluded from all selection |
+| `SolMode` | GPT Plus (Sol/Luna) family fully eligible |
+| `GrokMode` | Entire `gpt_plus` failure domain excluded from all selection |
 
 Properties (normative):
 
 1. **MANUAL_ONLY:** Mode changes exclusively through explicit operator action
-   (`scripts/orchestrator_mode.py set sol|grok`). No code path may change the
+   (`scripts/orchestrator_mode.py SolMode|GrokMode`). No code path may change the
    persisted mode as a side effect of runtime events.
 2. **PERSISTENT:** The selected mode survives process exit, missions, reboots.
    State lives at `~/.agents/runtime-routing/mode.json`.
@@ -52,10 +52,10 @@ Properties (normative):
    write a different mode. Example: in SolMode, a confirmed account-level
    quota failure on `openai_plus_capacity` sets
    `gpt_plus = temporarily unhealthy`; Sol and Luna are then excluded from
-   dispatch until cooldown expiry, but the persisted mode remains `sol_mode`
+   dispatch until cooldown expiry, but the persisted mode remains `SolMode`
    until the operator explicitly selects GrokMode.
-4. **DEFAULT:** A missing/corrupt state file resolves to `sol_mode` with a
-   recorded anomaly; first-run initialization writes `sol_mode` explicitly.
+4. **DEFAULT:** A missing/corrupt state file resolves to `SolMode` with
+   zero filesystem mutation (no anomaly sidecars created); first-run initialization writes `SolMode` explicitly.
 
 ### 2.2 SolMode semantics
 
@@ -275,10 +275,10 @@ domains):
 | Implementer independence group | Mode | Surviving candidates → weights |
 |---|---|---|
 | `gpt_family` (Sol, any Luna incl. OCG_LUNA) | either | Grok High 65, Gemini High 25, Opus 10 |
-| `supergrok` | `sol_mode` | Gemini High 60, Opus 20, Luna 20 |
-| `supergrok` | `grok_mode` | Gemini High 75, Opus 25 |
-| `gemini` | `sol_mode` | Grok High 60, Luna 25, Opus 15 |
-| `gemini` | `grok_mode` | Grok High 75, Opus 25 |
+| `supergrok` | `SolMode` | Gemini High 60, Opus 20, Luna 20 |
+| `supergrok` | `GrokMode` | Gemini High 75, Opus 25 |
+| `gemini` | `SolMode` | Grok High 60, Luna 25, Opus 15 |
+| `gemini` | `GrokMode` | Grok High 75, Opus 25 |
 | `cheap` or `ox_combo` | either | Grok High 60, Gemini High 30, Opus 10 |
 
 If exclusion + mode + health filters leave zero candidates, reviewer selection
@@ -340,15 +340,22 @@ A dedicated module maintains per-domain transient state, separate from mode
 state:
 
 - States per failure domain: `ELIGIBLE` | `COOLDOWN(until_utc)`.
-- Triggers (recorded by Controller evidence handling, extending — not replacing
-  — Core §10 mission breakers): confirmed account-level quota exhaustion
-  (403 usage-limit class) on a domain opens a cooldown for that domain only;
-  intermittent 429/5xx/timeouts record telemetry but never open cooldowns
-  (consistent with Core §10 "Non-Breaker Events").
+- Triggers: structured qualifying capacity and transient failure kinds —
+  `FailureKind.HTTP_429`, `FailureKind.HTTP_503`, `FailureKind.TIMEOUT`, and
+  `FailureKind.QUOTA_EXHAUSTED` — activate a temporary cooldown for the affected
+  domain only (default 1800s / 30 minutes, configurable).
 - Cooldowns expire automatically; expiry restores eligibility without any mode
-  mutation.
-- Health state persists at `~/.agents/runtime-routing/health.json`
-  (operator-inspectable, safe to delete; deletion means full eligibility).
+  mutation and without requiring cleanup writes.
+- Health state persists at `~/.agents/runtime-routing/health.json` (schema version 1,
+  atomic 0600 writes, 0700 dir, symlink refusal, zero mutation on read / missing / expired states).
+- Mission-scoped Core §10 breakers continue unchanged and independently;
+  dispatch requires passing BOTH layers.
+
+### 7.1 Post-Task-8 Health Reconciliation Note
+The health failure triggers above supersede earlier Phase-0 drafts that categorized
+429/503/timeouts as telemetry-only non-breaker events. In the implemented Task-8 architecture,
+these qualifying capacity signals open temporary cooldowns for the affected failure domain
+(e.g. `ox_combo` or `gpt_plus`), while persistent routing mode remains strictly `MANUAL_ONLY`.
 - Mission-scoped Core §10 breakers continue unchanged and independently;
   dispatch requires passing BOTH layers.
 
