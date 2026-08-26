@@ -178,6 +178,7 @@ ALL_LEAF_AGENTS=(
   "router-model-opencode-go-responses-gpt-5-6-luna.toml"
   "router-model-custom-qwen3-8-27b.toml"
   "router-model-nine-router-stepplan-step-3-7-flash.toml"
+  "router-model-nine-router-ox-alpha.toml"
 )
 
 echo "--- Verifying All Shipped Leaf Agent Declarations ---"
@@ -242,10 +243,10 @@ import json, os, re, sys, tomllib, yaml
 from pathlib import Path
 
 core_path = sys.argv[1]
-agent_paths = sys.argv[2:10]
-config_paths = sys.argv[10:12]
-manifest_path = sys.argv[12] if len(sys.argv) > 12 else ""
-target_home = Path(sys.argv[13]).resolve() if len(sys.argv) > 13 else None
+agent_paths = sys.argv[2:11]
+config_paths = sys.argv[11:13]
+manifest_path = sys.argv[13] if len(sys.argv) > 13 else ""
+target_home = Path(sys.argv[14]).resolve() if len(sys.argv) > 14 else None
 toml_failures = []
 
 omitted_paths = set()
@@ -329,6 +330,11 @@ expected_agents = {
         "kind": "router",
         "name": "router_nine_router_stepplan_step_3_7_flash",
         "model": "nine-router/stepplan/step-3.7-flash",
+    },
+    "router-model-nine-router-ox-alpha.toml": {
+        "kind": "router",
+        "name": "router_nine_router_ox_alpha",
+        "model": "nine-router/OX-ALpha",
     },
 }
 
@@ -642,6 +648,7 @@ print("[PASS] Verifier chains validated dynamically: self-conflicts and model-fa
   "${CODEX_AGENTS}/router-model-opencode-go-responses-gpt-5-6-luna.toml" \
   "${CODEX_AGENTS}/router-model-custom-qwen3-8-27b.toml" \
   "${CODEX_AGENTS}/router-model-nine-router-stepplan-step-3-7-flash.toml" \
+  "${CODEX_AGENTS}/router-model-nine-router-ox-alpha.toml" \
   "${SOL_CONFIG}" "${GROK_CONFIG}" "${MANIFEST_FILE}" "${TARGET_HOME}"; then
   echo "[FAIL] Dynamic Routing verification failed" >&2
   FAILED=1

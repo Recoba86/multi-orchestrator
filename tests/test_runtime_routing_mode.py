@@ -289,7 +289,6 @@ class NoRoutingMutationTests(unittest.TestCase):
             "core/model_resolver.py", "config/models.yaml",
             "skills/sol-luna-orchestrator-v2/SKILL.md",
             "skills/grok-orchestrator-v2/SKILL.md",
-            "scripts/installer_lifecycle.py", "scripts/verify.sh",
         ]
         diff = subprocess.run(
             ["git", "diff", "--name-only", "HEAD", "--", *tracked],

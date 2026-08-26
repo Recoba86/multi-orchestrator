@@ -1,15 +1,15 @@
-"""Shadow Scout, Standard Worker, and Deep Worker dispatch facade (Task 5).
+"""Shadow Scout, Standard Worker, and Deep Worker dispatch facade (Tasks 5 & 6).
 
 Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.1, §5.2, §5.3, §5.5a, §5.6, §5.7, §13.1)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Task 5)
+docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.1, §5.2, §5.3, §5.4, §5.5, §5.5a, §5.6, §5.7, §10, §11, §13.1)
+docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 5 & 6)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Collection, Optional
+from typing import Callable, Collection, Optional
 
 from core.policy_validator import PolicyValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
@@ -86,18 +86,42 @@ def dispatch_role(
     key: SelectionKey,
     excluded_endpoints: Optional[Collection[str]] = None,
     validator: Optional[PolicyValidator] = None,
+    ox_runtime_eligible: Optional[bool] = None,
+    domain_eligible: Optional[Callable[[str], bool]] = None,
 ) -> DispatchDecision:
-    """Compute shadow-mode weighted dispatch decision for SCOUT/STANDARD_WORKER/DEEP_WORKER.
-
-    Task 5 uses the BASE table only for Standard Worker (OX overlay is Task 6).
-    """
+    """Compute shadow-mode weighted dispatch decision for SCOUT/STANDARD_WORKER/DEEP_WORKER."""
     return select_for_role(
         policy=policy,
         role=role,
         key=key,
         excluded_endpoints=excluded_endpoints,
         validator=validator,
+        ox_runtime_eligible=ox_runtime_eligible,
+        domain_eligible=domain_eligible,
     )
+
+
+def _should_use_ox_overlay(
+    policy: RuntimePolicy,
+    ox_runtime_eligible: Optional[bool],
+    domain_eligible: Optional[Callable[[str], bool]],
+) -> bool:
+    """Determine whether the OX overlay table should be used for STANDARD_WORKER."""
+    # 1. Static policy eligibility for OX_ALPHA
+    ox_meta = policy.endpoint_resolution.get("OX_ALPHA", {})
+    if not ox_meta.get("verified", False) or ox_meta.get("eligibility") != "eligible":
+        return False
+
+    state = policy.ox_overlay
+    if state == "disabled":
+        return False
+    elif state == "enabled":
+        return True
+    elif state == "auto":
+        if domain_eligible is not None:
+            return domain_eligible("ox_combo")
+        return bool(ox_runtime_eligible is True)
+    return False
 
 
 def select_for_role(
@@ -107,6 +131,8 @@ def select_for_role(
     *,
     excluded_endpoints: Optional[Collection[str]] = None,
     validator: Optional[PolicyValidator] = None,
+    ox_runtime_eligible: Optional[bool] = None,
+    domain_eligible: Optional[Callable[[str], bool]] = None,
 ) -> DispatchDecision:
     """Select endpoint for role, mode, and key using Task 2 policy and Task 3 selector."""
     if role not in ALLOWED_ROLES:
@@ -120,9 +146,13 @@ def select_for_role(
 
     mode = key.mode
 
-    # Task 5 contract: STANDARD_WORKER uses base table only (ox_overlay_active=False)
-    table_used = "base"
-    candidates = weights_for(policy, role, mode, ox_overlay_active=False)
+    # Overlay applies ONLY to STANDARD_WORKER
+    if role == "STANDARD_WORKER" and _should_use_ox_overlay(policy, ox_runtime_eligible, domain_eligible):
+        table_used = "overlay"
+        candidates = weights_for(policy, role, mode, ox_overlay_active=True)
+    else:
+        table_used = "base"
+        candidates = weights_for(policy, role, mode, ox_overlay_active=False)
 
     # Pre-selection filtering: gather unverified endpoints in policy metadata + caller exclusions
     combined_exclusions = set(excluded_endpoints or ())

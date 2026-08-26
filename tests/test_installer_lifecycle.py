@@ -678,7 +678,7 @@ class InstallerLifecycleTests(unittest.TestCase):
             agent_entries = [
                 key for key in v1["installed_files"] if "/.codex/agents/" in key and key.endswith(".toml")
             ]
-            self.assertEqual(len(agent_entries), 8)
+            self.assertEqual(len(agent_entries), 9)
             custom = agent_entries[:5]
             missing = agent_entries[5:7]
             pristine = agent_entries[7]
