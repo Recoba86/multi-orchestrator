@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Manual SolMode/GrokMode operator CLI (plan Task 1).
+"""Manual SolMode/GrokMode operator CLI (Task 1R canonical interface).
 
-The ONLY writer of persistent routing mode is the explicit ``set``
-subcommand issued by an operator. ``status`` is strictly read-only.
+The ONLY writer of persistent routing mode is an explicit operator command
+(``SolMode`` or ``GrokMode``). ``status`` is strictly read-only.
 
 Usage:
-    orchestrator_mode.py status
-    orchestrator_mode.py set sol|grok
-    orchestrator_mode.py ... --state-path PATH
+    orchestrator_mode.py status [--state-path PATH]
+    orchestrator_mode.py SolMode [--state-path PATH]
+    orchestrator_mode.py GrokMode [--state-path PATH]
 
-Exit codes: 0 success; 2 invalid arguments (no state mutation).
+Exit codes:
+    0: success
+    1: write confirmation mismatch (unexpected)
+    2: invalid arguments / unrecognized command
 """
 
 from __future__ import annotations
@@ -22,19 +25,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.runtime_routing_mode import (  # noqa: E402
-    MODE_STATE_PATH_DEFAULT,
     GROK_MODE,
+    MODE_STATE_PATH_DEFAULT,
     SOL_MODE,
+    RoutingMode,
     read_mode,
     write_mode,
 )
 
-_SET_CHOICES = {"sol": SOL_MODE, "grok": GROK_MODE}
+_SETTERS: dict[str, RoutingMode] = {
+    "SolMode": SOL_MODE,
+    "GrokMode": GROK_MODE,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="orchestrator-mode",
+        prog="orchestrator_mode.py",
         description="View or manually set persistent SolMode/GrokMode state.",
     )
     parser.add_argument(
@@ -45,13 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("status", help="print current mode; read-only")
-
-    set_parser = sub.add_parser("set", help="persist a mode explicitly")
-    set_parser.add_argument(
-        "mode",
-        choices=sorted(_SET_CHOICES),
-        help="sol = SolMode (gpt_plus eligible), grok = GrokMode (excluded)",
+    sub.add_parser("status", help="print current resolved mode (read-only)")
+    sub.add_parser(
+        "SolMode",
+        help="persist SolMode (GPT Plus / Sol / Luna fully eligible)",
+    )
+    sub.add_parser(
+        "GrokMode",
+        help="persist GrokMode (entire gpt_plus failure domain excluded)",
     )
     return parser
 
@@ -61,16 +69,14 @@ def main(argv: list[str] | None = None) -> int:
     state_path: Path = args.state_path
 
     if args.command == "status":
-        mode = read_mode(state_path)  # read-only by contract
+        mode = read_mode(state_path)  # strictly read-only by contract
         print(json.dumps({
             "mode": mode.value,
             "state_path": str(state_path),
-            "source": "persisted" if state_path.exists() else "default",
         }, sort_keys=True))
         return 0
 
-    # set: explicit, validated, atomic write; confirm resulting state.
-    mode = _SET_CHOICES[args.mode]
+    mode = _SETTERS[args.command]
     write_mode(mode, state_path)
     confirmed = read_mode(state_path)
     print(json.dumps({
@@ -78,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         "state_path": str(state_path),
         "set_to": mode.value,
     }, sort_keys=True))
-    if confirmed != mode:  # pragma: no cover - replace() failure surface
+    if confirmed != mode:  # pragma: no cover
         print(f"error: confirmation mismatch after write to {state_path}",
               file=sys.stderr)
         return 1

@@ -1,12 +1,17 @@
-"""Tests for persistent SolMode/GrokMode state and the manual CLI.
+"""Tests for persistent SolMode/GrokMode state and the manual CLI (Task 1R).
 
-Covers committed plan Task 1: deterministic default, exact round-trips,
-switching, fail-closed malformed state, atomic writes, restrictive
-permissions, symlink rejection, read-only status, CLI exit codes.
+Corrective contract under test:
+- Canonical persisted values are EXACTLY ``SolMode`` / ``GrokMode``.
+- Canonical CLI surface: ``status``, ``SolMode``, ``GrokMode``.
+- Reads perform ZERO filesystem mutation: no sidecars, no directories,
+  nothing created or modified on any read path, including malformed state.
+- Strict schema validation: exact key set {version, mode}, integer version
+  equal to 1 (missing version is INVALID), exact canonical mode strings.
+- Writes remain atomic (tmp + os.replace) with 0600 file / 0700 dir modes
+  and refuse to follow symlinks in either direction.
 
-MANUAL_ONLY invariant: no function here or in the module under test may
-change persisted mode as a side effect of a read; only write_mode (operator)
-mutates state.
+MANUAL_ONLY invariant: only an explicit operator command mutates persisted
+state; no read path ever writes.
 """
 
 import json
@@ -37,128 +42,126 @@ def _state(tmp: str) -> Path:
     return Path(tmp) / "runtime-routing" / "mode.json"
 
 
+def _tree_snapshot(root: Path) -> dict[str, bytes | None]:
+    """Recursive name -> content map; None entries mark directories."""
+    snap: dict[str, bytes | None] = {}
+    if not root.exists():
+        return snap
+    for p in sorted(root.rglob("*")):
+        snap[str(p.relative_to(root))] = (
+            p.read_bytes() if p.is_file() else None
+        )
+    return snap
+
+
 class ModeEnumTests(unittest.TestCase):
     def test_exactly_two_modes_with_canonical_values(self):
-        self.assertEqual(RoutingMode.SOL_MODE.value, "sol_mode")
-        self.assertEqual(RoutingMode.GROK_MODE.value, "grok_mode")
+        self.assertEqual(RoutingMode.SOL_MODE.value, "SolMode")
+        self.assertEqual(RoutingMode.GROK_MODE.value, "GrokMode")
         self.assertEqual(len(RoutingMode), 2)
+        self.assertIs(RoutingMode("SolMode"), SOL_MODE)
+        self.assertIs(RoutingMode("GrokMode"), GROK_MODE)
 
-    def test_parse_exact_values_only(self):
-        self.assertEqual(parse_mode("sol_mode"), SOL_MODE)
-        self.assertEqual(parse_mode("grok_mode"), GROK_MODE)
+    def test_parse_exact_canonical_values_only(self):
+        self.assertEqual(parse_mode("SolMode"), SOL_MODE)
+        self.assertEqual(parse_mode("GrokMode"), GROK_MODE)
 
-    def test_parse_rejects_aliases_and_junk(self):
+    def test_parse_rejects_legacy_and_alias_spellings(self):
         for bad in (
-            "", "SolMode", "GrokMode", "solmode", "SOLMODE", "grok", "Sol",
-            "Grok", "sol", "banana",
+            "", "sol_mode", "grok_mode", "solmode", "SOLMODE", "GROKMODE",
+            "sol", "grok", "Sol", "Grok", "SolMode ", " SolMode", "banana",
         ):
             with self.assertRaises(ValueError, msg=repr(bad)):
                 parse_mode(bad)
 
 
 class ModeStateTests(unittest.TestCase):
-    """Committed plan Step 1 tests (verbatim) plus fail-closed extensions."""
-
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
         self.path = _state(self.tmp.name)
 
-    def test_missing_state_defaults_sol_and_records_anomaly(self):
-        self.assertEqual(read_mode(self.path), RoutingMode.SOL_MODE)
-        self.assertTrue(Path(str(self.path) + ".anomaly").exists())
+    def _write_state(self, payload: str) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(payload, encoding="utf-8")
 
-    def test_roundtrip_grok(self):
-        write_mode(RoutingMode.GROK_MODE, self.path)
-        self.assertEqual(read_mode(self.path), RoutingMode.GROK_MODE)
-
-    def test_corrupt_state_defaults_sol(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text("{not json", encoding="utf-8")
-        self.assertEqual(read_mode(self.path), RoutingMode.SOL_MODE)
-
-    def test_unknown_mode_value_defaults_sol(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text(json.dumps({"mode": "banana"}), encoding="utf-8")
-        self.assertEqual(read_mode(self.path), RoutingMode.SOL_MODE)
+    def test_roundtrip_grok_persists_canonical_value(self):
+        write_mode(GROK_MODE, self.path)
+        self.assertEqual(read_mode(self.path), GROK_MODE)
+        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(raw, {"version": 1, "mode": "GrokMode"})
 
     def test_roundtrip_sol_explicit_persist_reload(self):
         write_mode(SOL_MODE, self.path)
         raw = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(raw["mode"], "sol_mode")
-        self.assertEqual(raw["version"], 1)
+        self.assertEqual(raw, {"version": 1, "mode": "SolMode"})
         self.assertEqual(read_mode(self.path), SOL_MODE)
 
-    def test_switch_sol_to_grok_persists(self):
+    def test_switch_both_directions_persist(self):
         write_mode(SOL_MODE, self.path)
         write_mode(GROK_MODE, self.path)
         self.assertEqual(read_mode(self.path), GROK_MODE)
-        self.assertEqual(
-            json.loads(self.path.read_text(encoding="utf-8"))["mode"],
-            "grok_mode",
-        )
-
-    def test_switch_grok_to_sol_persists(self):
-        write_mode(GROK_MODE, self.path)
         write_mode(SOL_MODE, self.path)
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_missing_state_fails_closed_with_zero_mutation(self):
+        before = _tree_snapshot(self.home)
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+        # No directory created, no sidecar, nothing at all.
+        self.assertEqual(_tree_snapshot(self.home), before)
+        self.assertFalse(self.path.parent.exists())
+
+    def test_corrupt_state_fails_closed_with_zero_mutation(self):
+        self._write_state("{not json")
+        before = _tree_snapshot(self.home)
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+        self.assertEqual(_tree_snapshot(self.home), before)
+
+    def test_unknown_mode_value_fails_closed_with_zero_mutation(self):
+        self._write_state(json.dumps({"version": 1, "mode": "banana"}))
+        before = _tree_snapshot(self.home)
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+        self.assertEqual(_tree_snapshot(self.home), before)
+
+    def test_non_string_mode_fails_closed(self):
+        self._write_state(json.dumps({"version": 1, "mode": 7}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_legacy_lowercase_values_are_invalid(self):
+        self._write_state(json.dumps({"version": 1, "mode": "sol_mode"}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+        self._write_state(json.dumps({"version": 1, "mode": "grok_mode"}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_unsupported_version_fails_closed(self):
+        self._write_state(json.dumps({"version": 99, "mode": "GrokMode"}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_missing_version_is_invalid_strict_schema(self):
+        self._write_state(json.dumps({"mode": "GrokMode"}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_boolean_version_is_invalid(self):
+        self._write_state(json.dumps({"version": True, "mode": "GrokMode"}))
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+
+    def test_extra_keys_and_non_dict_shapes_fail_closed(self):
+        self._write_state(
+            json.dumps({"version": 1, "mode": "GrokMode", "extra": True})
+        )
+        self.assertEqual(read_mode(self.path), SOL_MODE)
+        self._write_state(json.dumps(["not", "a", "dict"]))
         self.assertEqual(read_mode(self.path), SOL_MODE)
 
     def test_invalid_write_argument_rejected_state_unchanged(self):
         write_mode(GROK_MODE, self.path)
         before = self.path.read_bytes()
-        for bad in ("SolMode", "SOLMODE", "grok", "Sol", "", None):
+        for bad in ("SolMode", "GrokMode", "sol_mode", "grok", "", None):
             with self.assertRaises(ValueError, msg=repr(bad)):
                 write_mode(bad, self.path)  # type: ignore[arg-type]
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(read_mode(self.path), GROK_MODE)
-
-    def test_malformed_json_fails_closed_to_sol_with_anomaly(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text("[1, 2", encoding="utf-8")
-        self.assertEqual(read_mode(self.path), SOL_MODE)
-        anomaly = json.loads(
-            Path(str(self.path) + ".anomaly").read_text(encoding="utf-8")
-        )
-        self.assertEqual(anomaly["reason"], "corrupt")
-
-    def test_unsupported_version_fails_closed_to_sol(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text(
-            json.dumps({"version": 99, "mode": "grok_mode"}),
-            encoding="utf-8",
-        )
-        self.assertEqual(read_mode(self.path), SOL_MODE)
-        anomaly = json.loads(
-            Path(str(self.path) + ".anomaly").read_text(encoding="utf-8")
-        )
-        self.assertEqual(anomaly["reason"], "unsupported_version")
-
-    def test_non_string_mode_fails_closed_to_sol(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text(json.dumps({"version": 1, "mode": 7}),
-                             encoding="utf-8")
-        self.assertEqual(read_mode(self.path), SOL_MODE)
-
-    def test_missing_version_treated_as_v1(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text(json.dumps({"mode": "grok_mode"}),
-                             encoding="utf-8")
-        self.assertEqual(read_mode(self.path), GROK_MODE)
-
-    def test_unexpected_schema_shape_fails_closed_to_sol(self):
-        self.path.parent.mkdir(parents=True)
-        self.path.write_text(json.dumps({"version": 1, "mode": "grok_mode",
-                                         "extra": True}), encoding="utf-8")
-        self.assertEqual(read_mode(self.path), SOL_MODE)
-        self.path.write_text(json.dumps(["not", "a", "dict"]),
-                             encoding="utf-8")
-        self.assertEqual(read_mode(self.path), SOL_MODE)
-
-    def test_read_never_writes_state_file(self):
-        # Read-only guarantee: missing state stays missing after read_mode.
-        result = read_mode(self.path)
-        self.assertEqual(result, SOL_MODE)
-        self.assertFalse(self.path.exists())
 
     def test_state_file_permissions_restrictive(self):
         write_mode(SOL_MODE, self.path)
@@ -199,15 +202,19 @@ class AtomicWriteTests(unittest.TestCase):
         self.path.parent.mkdir(parents=True)
         target = self.path.parent / "real.json"
         target.write_text(
-            json.dumps({"version": 1, "mode": "grok_mode"}), encoding="utf-8"
+            json.dumps({"version": 1, "mode": "GrokMode"}), encoding="utf-8"
         )
         self.path.symlink_to(target)
         # Fail closed: a symlinked authoritative path is treated as invalid.
         self.assertEqual(read_mode(self.path), SOL_MODE)
+        # ...and the refusal performs zero mutation.
+        self.assertEqual(target.read_text(
+            encoding="utf-8"), json.dumps({"version": 1, "mode": "GrokMode"})
+        )
 
 
 class ModeCliTests(unittest.TestCase):
-    """Committed plan CLI test (verbatim shape) + exit-code/read-only proof."""
+    """Canonical CLI surface: status | SolMode | GrokMode."""
 
     def run_cli(self, *args, home):
         env = dict(os.environ)
@@ -217,58 +224,60 @@ class ModeCliTests(unittest.TestCase):
             capture_output=True, text=True, env=env,
         )
 
-    def test_status_then_set_grok_then_status(self):
+    def test_status_on_missing_state_read_only_default(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            r1 = self.run_cli("status", home=home)
-            self.assertEqual(r1.returncode, 0)
-            self.assertIn("sol_mode", r1.stdout)
-            r2 = self.run_cli("set", "grok", home=home)
-            self.assertEqual(r2.returncode, 0)
+            r = self.run_cli("status", home=home)
+            self.assertEqual(r.returncode, 0, msg=r.stderr)
+            self.assertIn("SolMode", r.stdout)
+            self.assertEqual(list(home.iterdir()), [])  # nothing created
+
+    def test_set_grokmode_then_status(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            r2 = self.run_cli("GrokMode", home=home)
+            self.assertEqual(r2.returncode, 0, msg=r2.stderr)
+            self.assertEqual(
+                json.loads((home / "m.json").read_text()),
+                {"version": 1, "mode": "GrokMode"},
+            )
             r3 = self.run_cli("status", home=home)
             self.assertEqual(r3.returncode, 0)
-            self.assertIn("grok_mode", r3.stdout)
+            self.assertIn("GrokMode", r3.stdout)
 
-    def test_set_sol_then_set_grok_roundtrip(self):
+    def test_solmode_then_grokmode_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            self.run_cli("set", "sol", home=home)
-            r = self.run_cli("set", "grok", home=home)
+            self.run_cli("SolMode", home=home)
+            r = self.run_cli("GrokMode", home=home)
             self.assertEqual(r.returncode, 0)
-            self.assertIn("grok_mode", r.stdout)
+            self.assertIn("GrokMode", r.stdout)
             self.assertEqual(
-                json.loads((home / "m.json").read_text())["mode"], "grok_mode"
+                json.loads((home / "m.json").read_text())["mode"], "GrokMode"
             )
 
     def test_invalid_invocation_exits_nonzero_without_mutation(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            self.run_cli("set", "grok", home=home)
-            before = (home / "m.json").read_bytes()
-            for bad_args in (("set", "banana"), ("set", "SolMode"),
-                             ("set",), ("frobnicate",)):
-                r = self.run_cli(*bad_args, home=home)
-                self.assertNotEqual(r.returncode, 0, msg=str(bad_args))
-            self.assertEqual((home / "m.json").read_bytes(), before)
-
-    def test_status_is_read_only(self):
-        with tempfile.TemporaryDirectory() as d:
-            home = Path(d)
-            self.run_cli("set", "grok", home=home)
+            self.run_cli("GrokMode", home=home)
             before = (home / "m.json").read_bytes()
             listing_before = sorted(p.name for p in home.iterdir())
-            r = self.run_cli("status", home=home)
-            self.assertEqual(r.returncode, 0)
+            for bad_args in (("set", "grok"), ("set", "SolMode"),
+                             ("set",), ("sol",), ("grok",), ("frobnicate",)):
+                r = self.run_cli(*bad_args, home=home)
+                self.assertNotEqual(r.returncode, 0, msg=str(bad_args))
             self.assertEqual((home / "m.json").read_bytes(), before)
             self.assertEqual(sorted(p.name for p in home.iterdir()),
                              listing_before)
 
-    def test_cli_rejects_alias_spellings(self):
+    def test_status_is_byte_for_byte_read_only(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            for alias in ("SolMode", "GrokMode", "solmode"):
-                r = self.run_cli("set", alias, home=home)
-                self.assertNotEqual(r.returncode, 0, msg=alias)
+            self.run_cli("GrokMode", home=home)
+            before_tree = _tree_snapshot(home)
+            r = self.run_cli("status", home=home)
+            self.assertEqual(r.returncode, 0)
+            self.assertEqual(_tree_snapshot(home), before_tree)
 
 
 class NoRoutingMutationTests(unittest.TestCase):

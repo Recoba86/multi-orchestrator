@@ -1,19 +1,28 @@
-"""Persistent SolMode/GrokMode operator-intent state (plan Task 1).
+"""Persistent SolMode/GrokMode operator-intent state (Task 1R corrective).
 
 MANUAL_ONLY invariant (normative, spec §2.1): the persisted mode changes
 ONLY through an explicit operator call to ``write_mode`` (via the CLI).
-No health, telemetry, or selection code path may write mode state; reads
-never mutate the authoritative file.
+No health, telemetry, or selection code path may write mode state.
+
+Reads are STRICTLY READ-ONLY: ``read_mode`` performs ZERO filesystem
+mutation — no sidecars, no parent directories, no temp files — regardless
+of missing, unreadable, symlinked, corrupt, or schema-invalid state.
+Anomalies surface through return value only: any invalid condition fails
+closed to SOL_MODE.
 
 State lives at one authoritative path per target home
-(``~/.agents/runtime-routing/mode.json`` by default), schema::
+(``~/.agents/runtime-routing/mode.json`` by default), strict schema::
 
-    {"version": 1, "mode": "sol_mode" | "grok_mode"}
+    {"version": 1, "mode": "SolMode" | "GrokMode"}
 
-Canonical stored values are exactly ``sol_mode`` / ``grok_mode`` — no
-aliases. Missing/corrupt/unknown/unsupported state fails closed to
-SOL_MODE and records a JSON anomaly sidecar next to the state file;
-``read_mode`` never raises.
+Canonical stored values are exactly ``SolMode`` / ``GrokMode``; legacy
+``sol_mode``/``grok_mode`` and all other spellings are INVALID. Missing
+version, non-1 version, extra keys, or wrong shapes fail closed to
+SOL_MODE.
+
+Writes are atomic (same-directory tmp + ``os.replace``, fsync), file mode
+0600, directory 0700. Symlinked authoritative paths are refused on write
+without touching the target, and not followed on read.
 """
 
 from __future__ import annotations
@@ -36,8 +45,8 @@ __all__ = [
 
 
 class RoutingMode(Enum):
-    SOL_MODE = "sol_mode"
-    GROK_MODE = "grok_mode"
+    SOL_MODE = "SolMode"
+    GROK_MODE = "GrokMode"
 
 
 SOL_MODE = RoutingMode.SOL_MODE
@@ -51,11 +60,7 @@ _STATE_FILE_MODE = 0o600
 
 
 def parse_mode(value: object) -> RoutingMode:
-    """Parse an exact canonical mode value; anything else raises ValueError.
-
-    Aliases ("SolMode", "SOLMODE", "grok", ...) are deliberately rejected:
-    canonical storage values are only ``sol_mode`` / ``grok_mode``.
-    """
+    """Parse an exact canonical mode string; anything else raises ValueError."""
     if not isinstance(value, str):
         raise ValueError(f"mode must be a string, got {type(value).__name__}")
     try:
@@ -67,78 +72,38 @@ def parse_mode(value: object) -> RoutingMode:
         ) from exc
 
 
-def _anomaly_path(state_path: Path) -> Path:
-    return Path(str(state_path) + ".anomaly")
-
-
-def _record_anomaly(state_path: Path, reason: str, observed: object,
-                    resolved: RoutingMode) -> None:
-    """Best-effort anomaly sidecar; never masks the fail-closed result."""
-    payload = {
-        "reason": reason,
-        "observed": observed if isinstance(observed, (str, int, float,
-                                                      bool, type(None))) else str(observed),
-        "resolved": resolved.value,
-    }
-    try:
-        parent = state_path.parent
-        if parent.is_dir():
-            tmp = parent / (state_path.name + ".anomaly.tmp")
-            tmp.write_text(json.dumps(payload, sort_keys=True),
-                           encoding="utf-8")
-            os.replace(tmp, _anomaly_path(state_path))
-    except OSError:
-        pass
-
-
 def read_mode(state_path: Path | None = None) -> RoutingMode:
-    """Load persisted mode; fail closed to SOL_MODE on any anomaly."""
+    """Load persisted mode; fail closed to SOL_MODE on any anomaly.
+
+    ZERO filesystem mutation: never creates directories, files, temp files,
+    or anomaly sidecars. Symlinks at the authoritative path are rejected
+    without being followed. Never raises on bad content.
+    """
     path = MODE_STATE_PATH_DEFAULT if state_path is None else Path(state_path)
+    if path.is_symlink():
+        return SOL_MODE
     try:
         raw = path.read_bytes()
-    except FileNotFoundError:
-        # Sidecar needs the parent dir; create it for the sidecar only —
-        # read_mode must NEVER create the authoritative mode.json itself.
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return SOL_MODE
-        _record_anomaly(path, "missing", None, SOL_MODE)
-        return SOL_MODE
-    except OSError:
-        _record_anomaly(path, "unreadable", None, SOL_MODE)
-        return SOL_MODE
-
-    # Refuse symlinks for the authoritative file (no following).
-    if path.is_symlink():
-        _record_anomaly(path, "symlink", None, SOL_MODE)
+    except (FileNotFoundError, OSError):
         return SOL_MODE
 
     try:
         data = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        _record_anomaly(path, "corrupt", repr(exc)[:200], SOL_MODE)
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return SOL_MODE
 
-    if not isinstance(data, dict) or set(data) - {"version", "mode"}:
-        _record_anomaly(path, "unexpected_schema", None, SOL_MODE)
+    # Strict schema: exact key set {version, mode}, version == 1 required.
+    if not isinstance(data, dict) or set(data) != {"version", "mode"}:
         return SOL_MODE
 
-    version = data.get("version", 1)  # missing version treated as v1
+    version = data["version"]
     if not isinstance(version, int) or isinstance(version, bool) \
             or version != STATE_SCHEMA_VERSION:
-        _record_anomaly(path, "unsupported_version", version, SOL_MODE)
-        return SOL_MODE
-
-    stored = data.get("mode")
-    if not isinstance(stored, str):
-        _record_anomaly(path, "non_string_mode", stored, SOL_MODE)
         return SOL_MODE
 
     try:
-        return parse_mode(stored)
+        return parse_mode(data["mode"])
     except ValueError:
-        _record_anomaly(path, "unknown_value", stored, SOL_MODE)
         return SOL_MODE
 
 
@@ -149,11 +114,7 @@ def write_mode(mode: RoutingMode, state_path: Path | None = None) -> None:
     content visible under the authoritative name). File mode 0600, dir 0700.
     Symlinked destination paths are rejected without touching the target.
     """
-    # Accept only genuine RoutingMode members; strings/aliases are rejected
-    # before any I/O so invalid calls cannot touch persisted state.
-    if isinstance(mode, RoutingMode):
-        validated = mode
-    else:
+    if not isinstance(mode, RoutingMode):
         raise ValueError(
             f"write_mode expects a RoutingMode member, got {mode!r}; "
             f"valid: {', '.join(m.value for m in RoutingMode)}"
@@ -168,7 +129,7 @@ def write_mode(mode: RoutingMode, state_path: Path | None = None) -> None:
         )
 
     payload = json.dumps(
-        {"version": STATE_SCHEMA_VERSION, "mode": validated.value},
+        {"version": STATE_SCHEMA_VERSION, "mode": mode.value},
         sort_keys=True,
     ).encode("utf-8")
 
