@@ -57,3 +57,12 @@ If `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` cannot be read or is una
 3. **Receive `BOSS_ACTION_PACKET`:** Validate `mission_id`, `workspace_root`, and `repository_identity` match `MISSION_IDENTITY`, then validate requested endpoint/model/effort against Core policy. On mismatch, refuse Host request submission with `MISSION_CONTEXT_MISMATCH`. On success, submit the child request with requested `fork_turns="none"`.
 4. **Lossless Relay:** Controller captures `CHILD_EXECUTION_RESULT`, records trace entry, validates `boss_child_id` matches current mission Boss, and delivers `BOSS_FOLLOWUP_PACKET` to the SAME dedicated Sol Boss.
 5. **Final Decision & Identity Validation:** Sol Boss issues `FINAL_BOSS_DECISION` carrying `mission_id`, `workspace_root`, `repository_identity`, and `boss_child_id`. Controller validates that all identity fields match `MISSION_IDENTITY`. If any field mismatches, abort with `FINAL_DECISION_CONTEXT_MISMATCH`. On successful validation, Controller finalizes Mission Trace and delivers factual summary to user.
+
+## Mode-Aware Routing (Shadow)
+
+A runtime-routing subsystem introduces two user-selected modes (`SolMode` and `GrokMode`). During the shadow transition posture, this legacy wrapper binding remains authoritative until the explicit activation gate (Task 12).
+
+- **Shadow Posture:** Mode-aware routing runs alongside legacy chains to compute and log routing decisions without altering submitted Host requests.
+- **Manual Mode Intent:** The persistent mode changes exclusively through explicit operator action (`orchestrator_mode.py SolMode` or `orchestrator_mode.py GrokMode`). Health status never automatically changes the persistent mode.
+- **Global Targets:** Target-share numbers (45% Gemini, 25% SuperGrok, 17% GPT Plus, 7% Cheap, 6% Opus) are telemetry observation targets only, not active control loops.
+- **Boss Continuity:** The dedicated Boss child assigned at mission start remains authoritative across all turns; mode state changes affect only new missions.

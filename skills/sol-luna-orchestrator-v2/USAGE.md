@@ -28,3 +28,19 @@ codex
 ```text
 Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role subagents.
 ```
+
+## Mode-Aware Routing (Shadow Posture)
+
+Operators can manage persistent routing modes using:
+
+```bash
+orchestrator_mode.py status
+orchestrator_mode.py SolMode
+orchestrator_mode.py GrokMode
+```
+
+Trigger phrases:
+- "Use SolMode to plan and execute this feature with multi-role subagents."
+- "Use GrokMode to plan and execute this feature with multi-role subagents."
+
+During shadow posture, submitted requests continue to use legacy wrapper bindings until explicit activation in Task 12.
