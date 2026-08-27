@@ -397,9 +397,11 @@ change, no redesign. Default at activation: `auto`.
    (endpoint, model, effort) triple passes the existing
    `PolicyValidator.validate_controller_execution_binding` gate before Host
    submission. The new layer proposes requests; the existing layer still
-   validates them. Registry additions (`STEP_3_7_FLASH`, `PLUS_LUNA_XHIGH`,
-   `OX_ALPHA`) extend `ORCHESTRATOR_CORE.md`'s registry during implementation
-   with canonical model strings and accepted efforts consistent with §11.
+   validates them. Per §13.2 Amendment B, runtime endpoints are managed
+   declaratively via the validated catalog (`config/runtime-routing.yaml` and
+   `RuntimeEndpointValidator`) without requiring manual `ORCHESTRATOR_CORE.md` edits;
+   `STEP_3_7_FLASH` is active/validated, `OX_ALPHA` is disabled/not activated,
+   and `PLUS_LUNA_XHIGH` remains unverified and fail-closed (§13.1).
 3. **Host boundary unchanged:** Nothing here claims Host-internal allocation,
    interception, pre-allocation authorization, or non-bypassability. All
    guarantees remain "a conforming Controller does not submit invalid

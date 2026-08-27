@@ -724,46 +724,22 @@ Gate: THIS evidence requires operator review BEFORE Task 12 proceeds.
 5. **Wrapper Activation:** `skills/*-v2/SKILL.md` check master switch: if ON, runtime mode-aware routing is authoritative; if OFF, exact legacy wrapper binding is used.
 6. **Installer Payload:** Managed publication of runtime routing modules, CLIs, and config in `scripts/installer_lifecycle.py` and dynamic assertions in `scripts/verify.sh`.
 7. **Rollback Verification:** Mandatory clean-room verification (`OFF -> ON -> VERIFY -> OFF -> VERIFY LEGACY -> ON -> VERIFY`) followed by real environment installation and kill-switch smoke test.
-- [ ] **Step 1: Write failing tests first** (per touched subsystem, in order):
-  (a) registry fixtures: extend `tests/test_policy_validator.py` with
-  `STEP_3_7_FLASH` / `OX_ALPHA` registry entries.
-     Run: `python3 -m unittest tests.test_policy_validator -v`
-     Expected: FAIL — unknown endpoint.
-  (b) verify.sh checks: extend `tests/test_verify.py` black-box cases that
-     corrupt the installed `runtime-routing.yaml` / mode file inside a temp
-     home; verify.sh must reject them.
-     Run: `python3 -m unittest tests.test_verify.VerifyBlackBoxTests -v`
-     Expected: FAIL — new cases fail because verify.sh has no checks yet.
-  (c) rollback-compat: add
-     `VerifyBlackBoxTests.test_check_rollback_compat_flag` asserting
-     `verify.sh --check-rollback-compat` exits 0 against a legacy-text fixture
-     home.
-     Run: `python3 -m unittest tests.test_verify.VerifyBlackBoxTests.test_check_rollback_compat_flag -v`
-     Expected: FAIL — flag not implemented yet.
-- [ ] **Step 2: Implement in separate commits**:
-  CORE registry edit → skills binding flip → installer PAYLOAD extension →
-  verify.sh dynamic checks. After each: run its task test command.
-- [ ] **Step 3: Full verification**
+- [ ] **Step 1: Write tests for Task 12 activation architecture**:
+  (a) master switch & CLI tests: `tests/test_runtime_activation_rollback.py`
+  (b) declarative catalog tests: verify `STEP_3_7_FLASH` validates via `RuntimeEndpointValidator`, `OX_ALPHA` remains disabled/unselectable, and `PLUS_LUNA_XHIGH` remains unverified.
+  (c) clean-room rollback tests: `OFF -> ON -> VERIFY -> OFF -> VERIFY LEGACY -> ON -> VERIFY`.
+- [ ] **Step 2: Implement activation in bounded commits**:
+  (1) docs amendment recording operator decisions
+  (2) master switch (`core/runtime_routing_switch.py`) & unified CLI (`scripts/orchestrator_routing.py`)
+  (3) declarative catalog & validator (`core/runtime_endpoint_validator.py`, `config/runtime-routing.yaml`)
+  (4) wrapper activation with master switch support (`skills/*-v2/SKILL.md`, `scripts/installer_lifecycle.py`, `scripts/verify.sh`)
+  (5) activation and rollback test suite (`tests/test_runtime_activation_rollback.py`)
+- [ ] **Step 3: Full clean-room verification**
 Run: `python3 -m unittest discover -s tests`; then clean-room:
-`TMP_HOME="$(mktemp -d)"; ./scripts/install.sh --target-home "$TMP_HOME" && ./scripts/verify.sh --target-home "$TMP_HOME" && ./scripts/uninstall.sh --target-home "$TMP_HOME"; rm -rf "$TMP_HOME"`; then `TMP_HOME="$(mktemp -d)"; ./scripts/install.sh --target-home "$TMP_HOME" && ./scripts/verify.sh --target-home "$TMP_HOME" --check-rollback-compat; rm -rf "$TMP_HOME"`.
-- [ ] **Step 4: Operator gate (non-code)**: present Task 11 evidence + this
-  task's verification output to the operator; activation commits proceed ONLY
-  on explicit operator sign-off recorded in the final commit body. If the
-  operator declines, STOP — Tasks 1–11 remain mergeable without activation.
+`TMP_HOME="$(mktemp -d)"; ./scripts/install.sh --target-home "$TMP_HOME" && ./scripts/verify.sh --target-home "$TMP_HOME" && ./scripts/uninstall.sh --target-home "$TMP_HOME"; rm -rf "$TMP_HOME"`.
+- [ ] **Step 4: Operator gate**: Activation commits proceed on explicit operator sign-off recorded in final commit body.
 
-Commit sequence (executed during Step 2, one commit per subsystem, each after
-its subsystem test passes):
-
-```bash
-git add core/ORCHESTRATOR_CORE.md tests/test_policy_validator.py
-git commit -m "feat(core): register STEP_3_7_FLASH and OX_ALPHA routing endpoints"
-git add skills/sol-luna-orchestrator-v2/SKILL.md skills/grok-orchestrator-v2/SKILL.md
-git commit -m "feat(skills): activate mode-checked Boss bindings"
-git add scripts/installer_lifecycle.py tests/test_installer_lifecycle.py config/runtime-routing.yaml
-git commit -m "feat(installer): manage runtime-routing payload"
-git add scripts/verify.sh tests/test_verify.py
-git commit -m "feat(verify): dynamic runtime-routing and rollback-compat validation"
-```
+*(Note: The earlier Phase-0 plan draft proposed registering OX_ALPHA in ORCHESTRATOR_CORE.md; this was superseded by the Task-12 Operator Activation Amendment which deactivated OX_ALPHA and introduced declarative catalog validation).*
 - [ ] **Step 5: Final gate** — full suite green; clean-room
   install/verify/uninstall green; operator sign-off recorded in the final
   commit body. Deployment to live `~/.agents` remains a SEPARATE
