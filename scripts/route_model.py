@@ -37,8 +37,14 @@ from core.runtime_routing_health import (
     excluded_endpoints,
 )
 from core.runtime_routing_mode import (
+    GROK_MODE,
     MODE_STATE_PATH_DEFAULT,
+    SOL_MODE,
     read_mode,
+)
+from core.runtime_routing_switch import (
+    ROUTING_SWITCH_PATH_DEFAULT,
+    is_routing_enabled,
 )
 from core.runtime_routing_telemetry import (
     TELEMETRY_PATH_DEFAULT,
@@ -73,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=TELEMETRY_PATH_DEFAULT,
         help="Path to telemetry JSONL log (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--switch-path",
+        type=Path,
+        default=ROUTING_SWITCH_PATH_DEFAULT,
+        help="Path to master switch enabled.json (default: %(default)s)",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -147,15 +159,80 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "select":
+        enabled = is_routing_enabled(args.switch_path)
         mode = read_mode(args.state_path)
         now_ts = args.now if args.now is not None else int(datetime.now().timestamp())
         now_iso = datetime.now(timezone.utc).isoformat()
+
+        # When Master Switch is OFF, bypass runtime routing and return exact legacy authority
+        if not enabled:
+            if args.role == "BOSS":
+                # Legacy Boss binding: Sol wrapper -> SOL_HIGH, Grok wrapper / GrokMode -> GROK_4_6_HIGH
+                selected_ep = "GROK_4_6_HIGH" if mode == GROK_MODE else "SOL_HIGH"
+                meta = policy.endpoint_resolution[selected_ep]
+                output = {
+                    "role": "BOSS",
+                    "mode": mode.value,
+                    "selected_endpoint": selected_ep,
+                    "model": meta.get("model", ""),
+                    "effort": meta.get("effort", ""),
+                    "failure_domain": meta.get("failure_domain", "unknown"),
+                    "core_validation_status": "REQUEST_VALID",
+                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+                    "master_switch": "OFF",
+                }
+                print(json.dumps(output, sort_keys=True))
+                return 0
+            elif args.role == "SCOUT":
+                output = {
+                    "role": "SCOUT",
+                    "mode": mode.value,
+                    "selected_endpoint": "GEMINI_FLASH_HIGH",
+                    "model": "nine-router/ag/gemini-3.7-flash-high",
+                    "effort": "high",
+                    "core_validation_status": "REQUEST_VALID",
+                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+                    "master_switch": "OFF",
+                }
+                print(json.dumps(output, sort_keys=True))
+                return 0
+            elif args.role in ("STANDARD_WORKER", "DEEP_WORKER"):
+                selected_ep = "GEMINI_FLASH_HIGH" if args.role == "STANDARD_WORKER" else "PLUS_LUNA"
+                meta = policy.endpoint_resolution[selected_ep]
+                output = {
+                    "role": args.role,
+                    "mode": mode.value,
+                    "selected_endpoint": selected_ep,
+                    "model": meta.get("model", ""),
+                    "effort": meta.get("effort", ""),
+                    "core_validation_status": "REQUEST_VALID",
+                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+                    "master_switch": "OFF",
+                }
+                print(json.dumps(output, sort_keys=True))
+                return 0
+            elif args.role == "VERIFIER":
+                output = {
+                    "role": "VERIFIER",
+                    "mode": mode.value,
+                    "implementer_endpoint": args.implementer or "unknown",
+                    "implementer_independence_group": "unknown",
+                    "selected_endpoint": "OPUS_4_6_THINKING",
+                    "model": "nine-router/ag/claude-opus-4-6-thinking",
+                    "effort": "high",
+                    "failure_domain": "opus",
+                    "independence_group": "opus",
+                    "core_validation_status": "REQUEST_VALID",
+                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+                    "master_switch": "OFF",
+                }
+                print(json.dumps(output, sort_keys=True))
+                return 0
 
         def _is_domain_eligible(dom: str) -> bool:
             return domain_eligible(dom, now=now_ts, path=args.health_path, policy=policy)
 
         health_excl = excluded_endpoints(policy, now=now_ts, path=args.health_path)
-
         if args.role == "BOSS":
             dec = shadow_boss_binding(
                 mode=mode,

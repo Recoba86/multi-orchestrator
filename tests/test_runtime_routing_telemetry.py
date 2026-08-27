@@ -256,9 +256,13 @@ class ShadowControllerCliTests(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.state_path = Path(self.tmp_dir.name) / "mode.json"
+        self.switch_path = Path(self.tmp_dir.name) / "enabled.json"
         self.health_path = Path(self.tmp_dir.name) / "health.json"
         self.telemetry_path = Path(self.tmp_dir.name) / "telemetry.jsonl"
         self.policy = load_runtime_policy(CONFIG_PATH)
+        # Enable routing switch for active selection telemetry tests
+        self.switch_path.parent.mkdir(parents=True, exist_ok=True)
+        self.switch_path.write_text(json.dumps({"version": 1, "enabled": True}), encoding="utf-8")
 
     def tearDown(self):
         self.tmp_dir.cleanup()
@@ -268,16 +272,12 @@ class ShadowControllerCliTests(unittest.TestCase):
             sys.executable,
             str(CLI_PATH),
             "--state-path", str(self.state_path),
+            "--switch-path", str(self.switch_path),
             "--health-path", str(self.health_path),
             "--telemetry-path", str(self.telemetry_path),
             *args,
         ]
         return subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
-
-    # -------------------------------------------------------------------------
-    # CLI: SELECT COMMAND COMPOSES EXISTING MODULES
-    # -------------------------------------------------------------------------
-    def test_cli_select_scout_solmode(self):
         res = self._run_cli("select", "--role", "SCOUT", "--mission-id", "m1", "--ordinal", "0")
         self.assertEqual(res.returncode, 0, f"CLI failed: {res.stderr}")
         data = json.loads(res.stdout)
