@@ -29,6 +29,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import (
     GROK_MODE,
     MODE_STATE_PATH_DEFAULT,
@@ -168,6 +169,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "validate":
         try:
             policy = load_runtime_policy(args.config_path)
+            endpoint_val = RuntimeEndpointValidator(runtime_policy=policy)
+            ok, err = endpoint_val.validate_catalog_conflicts()
+            if not ok:
+                print(f"[FAIL] Configuration validation error: {err}", file=sys.stderr)
+                return 1
             print(f"[PASS] Runtime routing configuration at {args.config_path} is VALID.")
             return 0
         except Exception as exc:

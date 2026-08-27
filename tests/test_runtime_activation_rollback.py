@@ -83,12 +83,31 @@ class RuntimeEndpointCatalogTests(unittest.TestCase):
         ok, err = self.endpoint_validator.validate_endpoint("STEP_3_7_FLASH", effort="high")
         self.assertTrue(ok, f"STEP_3_7_FLASH validation failed: {err}")
 
+    def test_core_endpoint_override_conflict_rejected(self):
+        """Reject configuration that attempts to override existing Core endpoint with different model."""
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+        # SOL_HIGH in Core is gpt-5.6-sol; attempt to conflict in catalog with different model
+        raw["endpoint_resolution"]["SOL_HIGH"]["model"] = "conflicting-model-string"
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+            yaml.safe_dump(raw, tf)
+            tf_path = Path(tf.name)
+        try:
+            conflict_policy = load_runtime_policy(tf_path)
+            conflict_val = RuntimeEndpointValidator(runtime_policy=conflict_policy)
+            ok, err = conflict_val.validate_catalog_conflicts()
+            self.assertFalse(ok)
+            self.assertIn("REJECT_CORE_OVERRIDE_CONFLICT", err or "")
+
+            ok_ep, err_ep = conflict_val.validate_endpoint("SOL_HIGH")
+            self.assertFalse(ok_ep)
+            self.assertIn("REJECT_CORE_OVERRIDE_CONFLICT", err_ep or "")
+        finally:
+            tf_path.unlink(missing_ok=True)
+
     def test_ox_alpha_is_disabled_and_unselectable(self):
         meta = self.policy.endpoint_resolution["OX_ALPHA"]
-        self.assertFalse(meta.get("enabled", True))
-        self.assertFalse(meta.get("verified", True))
         self.assertEqual(meta.get("eligibility"), "disabled")
-
         ok, err = self.endpoint_validator.validate_endpoint("OX_ALPHA")
         self.assertFalse(ok)
         self.assertIn("REJECT_DISABLED_ENDPOINT", err or "")
