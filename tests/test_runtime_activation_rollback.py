@@ -205,6 +205,49 @@ class OrchestratorRoutingCliTests(unittest.TestCase):
         res_val = self._run_cli("validate")
         self.assertEqual(res_val.returncode, 0, res_val.stderr)
         self.assertIn("[PASS]", res_val.stdout)
+    def test_legacy_rollback_when_switch_is_off_versus_on(self):
+        """Verify that when master switch is OFF, legacy wrapper bindings/chains are returned."""
+        # 1. Switch OFF: Sol wrapper returns SOL_HIGH, Grok wrapper returns GROK_4_6_HIGH
+        set_routing_enabled(False, path=self.switch_path)
+        res_sol_off = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "route_model.py"),
+             "--switch-path", str(self.switch_path),
+             "--health-path", str(self.health_path),
+             "--telemetry-path", str(self.telemetry_path),
+             "select", "--no-telemetry", "--role", "BOSS", "--skill", "sol-luna-orchestrator-v2"],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+        self.assertEqual(res_sol_off.returncode, 0, res_sol_off.stderr)
+        self.assertEqual(json.loads(res_sol_off.stdout)["selected_endpoint"], "SOL_HIGH")
+        self.assertEqual(json.loads(res_sol_off.stdout)["routing_authority"], "LEGACY_WRAPPER_AUTHORITY")
+
+        res_grok_off = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "route_model.py"),
+             "--switch-path", str(self.switch_path),
+             "--health-path", str(self.health_path),
+             "--telemetry-path", str(self.telemetry_path),
+             "select", "--no-telemetry", "--role", "BOSS", "--skill", "grok-orchestrator-v2"],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+        self.assertEqual(res_grok_off.returncode, 0, res_grok_off.stderr)
+        self.assertEqual(json.loads(res_grok_off.stdout)["selected_endpoint"], "GROK_4_6_HIGH")
+        self.assertEqual(json.loads(res_grok_off.stdout)["routing_authority"], "LEGACY_WRAPPER_AUTHORITY")
+
+        # 2. Switch ON: Runtime mode-aware routing is used
+        set_routing_enabled(True, path=self.switch_path)
+        write_mode(GROK_MODE, state_path=self.state_path)
+        res_on = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "route_model.py"),
+             "--switch-path", str(self.switch_path),
+             "--state-path", str(self.state_path),
+             "--health-path", str(self.health_path),
+             "--telemetry-path", str(self.telemetry_path),
+             "select", "--no-telemetry", "--role", "BOSS", "--skill", "sol-luna-orchestrator-v2"],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+        self.assertEqual(res_on.returncode, 0, res_on.stderr)
+        # In GrokMode with runtime routing ON, Boss is GROK_4_6_HIGH even if sol wrapper was queried
+        self.assertEqual(json.loads(res_on.stdout)["selected_endpoint"], "GROK_4_6_HIGH")
 
 
 if __name__ == "__main__":

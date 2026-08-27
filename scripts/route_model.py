@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Shadow Controller CLI for model routing and target-share reporting (Task 9).
+"""Shadow Controller CLI for model routing and target-share reporting (Tasks 9 & 12).
 
 Usage:
-    route_model.py select --role ROLE [--mission-id M] [--ordinal N] [--implementer IMP]
-                          [--state-path P] [--health-path H] [--telemetry-path T] [--no-telemetry]
+    route_model.py select --role ROLE [--mission-id M] [--ordinal N] [--attempt A]
+                          [--skill S] [--implementer IMP]
+                          [--state-path P] [--switch-path S] [--health-path H]
+                          [--telemetry-path T] [--no-telemetry]
     route_model.py report [--window-hours N] [--telemetry-path T]
 
 Exit codes:
@@ -24,13 +26,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from core.policy_validator import PolicyValidator
-from core.runtime_boss_binding import shadow_boss_binding
+from core.runtime_boss_binding import legacy_binding, shadow_boss_binding
 from core.runtime_reviewer_selector import select_reviewer
 from core.runtime_role_dispatch import dispatch_role
-from core.runtime_routing_policy import (
-    group_of,
-    load_runtime_policy,
-)
 from core.runtime_routing_health import (
     HEALTH_STATE_PATH_DEFAULT,
     domain_eligible,
@@ -41,6 +39,10 @@ from core.runtime_routing_mode import (
     MODE_STATE_PATH_DEFAULT,
     SOL_MODE,
     read_mode,
+)
+from core.runtime_routing_policy import (
+    group_of,
+    load_runtime_policy,
 )
 from core.runtime_routing_switch import (
     ROUTING_SWITCH_PATH_DEFAULT,
@@ -69,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to authoritative mode.json (default: %(default)s)",
     )
     parser.add_argument(
+        "--switch-path",
+        type=Path,
+        default=ROUTING_SWITCH_PATH_DEFAULT,
+        help="Path to master switch enabled.json (default: %(default)s)",
+    )
+    parser.add_argument(
         "--health-path",
         type=Path,
         default=HEALTH_STATE_PATH_DEFAULT,
@@ -80,17 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=TELEMETRY_PATH_DEFAULT,
         help="Path to telemetry JSONL log (default: %(default)s)",
     )
-    parser.add_argument(
-        "--switch-path",
-        type=Path,
-        default=ROUTING_SWITCH_PATH_DEFAULT,
-        help="Path to master switch enabled.json (default: %(default)s)",
-    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
     # SELECT subcommand
-    select_parser = sub.add_parser("select", help="Compute shadow routing decision for a role.")
+    select_parser = sub.add_parser("select", help="Compute routing decision for a role.")
     select_parser.add_argument(
         "--role",
         required=True,
@@ -107,6 +109,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Dispatch ordinal (default: 0)",
+    )
+    select_parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="Legacy chain attempt index (1-indexed, default: 1)",
+    )
+    select_parser.add_argument(
+        "--skill",
+        help="Invoking wrapper skill name (e.g. sol-luna-orchestrator-v2, grok-orchestrator-v2)",
     )
     select_parser.add_argument(
         "--implementer",
@@ -132,6 +144,91 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _legacy_select(
+    role: str,
+    skill: Optional[str],
+    implementer: Optional[str],
+    attempt: int,
+    validator: PolicyValidator,
+    policy: RuntimePolicy,
+) -> dict:
+    """Resolve exact legacy Core binding/role-chain routing when master switch is OFF."""
+    if role == "BOSS":
+        target_skill = skill or "sol-luna-orchestrator-v2"
+        ok, err, binding = validator.validate_boss_binding(target_skill)
+        if not ok or not binding:
+            ep_id = legacy_binding(target_skill) if target_skill in ("sol-luna-orchestrator-v2", "grok-orchestrator-v2") else "SOL_HIGH"
+            meta = policy.endpoint_resolution.get(ep_id, {})
+            model = meta.get("model", "")
+            effort = meta.get("effort", "high")
+        else:
+            ep_id = binding.get("required_boss_endpoint", "SOL_HIGH")
+            model = binding.get("model", "")
+            effort = binding.get("effort", "high")
+
+        return {
+            "role": "BOSS",
+            "skill": target_skill,
+            "selected_endpoint": ep_id,
+            "model": model,
+            "effort": effort,
+            "core_validation_status": "REQUEST_VALID" if ok else f"CORE_REQUEST_INVALID: {err}",
+            "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+            "master_switch": "OFF",
+        }
+
+    elif role in ("SCOUT", "STANDARD_WORKER", "DEEP_WORKER"):
+        chain = validator.role_chains.get(role, [])
+        attempt_idx = max(0, min(attempt - 1, len(chain) - 1)) if chain else 0
+        cand = chain[attempt_idx] if chain else {}
+        ep_id = cand.get("endpoint", "")
+        model = cand.get("model", "")
+        effort = cand.get("effort", "")
+
+        return {
+            "role": role,
+            "attempt": attempt,
+            "selected_endpoint": ep_id,
+            "model": model,
+            "effort": effort,
+            "core_validation_status": "REQUEST_VALID" if ep_id else "CORE_REQUEST_INVALID",
+            "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+            "master_switch": "OFF",
+        }
+
+    elif role == "VERIFIER":
+        imp = implementer or "SOL_HIGH"
+        # Find first valid independent verifier in Core verifier chains or default
+        v_chain = validator.verifier_chains.get(imp, [])
+        selected_v = None
+        for cand in v_chain:
+            v_ep = cand.get("endpoint")
+            ok, _ = validator.validate_verifier_independence(imp, v_ep)
+            if ok:
+                selected_v = cand
+                break
+
+        if not selected_v and v_chain:
+            selected_v = v_chain[0]
+
+        ep_id = selected_v.get("endpoint", "OPUS_4_6_THINKING") if selected_v else "OPUS_4_6_THINKING"
+        model = selected_v.get("model", "nine-router/ag/claude-opus-4-6-thinking") if selected_v else "nine-router/ag/claude-opus-4-6-thinking"
+        effort = selected_v.get("effort", "high") if selected_v else "high"
+
+        return {
+            "role": "VERIFIER",
+            "implementer_endpoint": imp,
+            "selected_endpoint": ep_id,
+            "model": model,
+            "effort": effort,
+            "core_validation_status": "REQUEST_VALID",
+            "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
+            "master_switch": "OFF",
+        }
+
+    raise ValueError(f"Unknown role {role!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -164,75 +261,25 @@ def main(argv: list[str] | None = None) -> int:
         now_ts = args.now if args.now is not None else int(datetime.now().timestamp())
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        # When Master Switch is OFF, bypass runtime routing and return exact legacy authority
+        # If master switch is OFF, return exact legacy authority
         if not enabled:
-            if args.role == "BOSS":
-                # Legacy Boss binding: Sol wrapper -> SOL_HIGH, Grok wrapper / GrokMode -> GROK_4_6_HIGH
-                selected_ep = "GROK_4_6_HIGH" if mode == GROK_MODE else "SOL_HIGH"
-                meta = policy.endpoint_resolution[selected_ep]
-                output = {
-                    "role": "BOSS",
-                    "mode": mode.value,
-                    "selected_endpoint": selected_ep,
-                    "model": meta.get("model", ""),
-                    "effort": meta.get("effort", ""),
-                    "failure_domain": meta.get("failure_domain", "unknown"),
-                    "core_validation_status": "REQUEST_VALID",
-                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
-                    "master_switch": "OFF",
-                }
-                print(json.dumps(output, sort_keys=True))
-                return 0
-            elif args.role == "SCOUT":
-                output = {
-                    "role": "SCOUT",
-                    "mode": mode.value,
-                    "selected_endpoint": "GEMINI_FLASH_HIGH",
-                    "model": "nine-router/ag/gemini-3.7-flash-high",
-                    "effort": "high",
-                    "core_validation_status": "REQUEST_VALID",
-                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
-                    "master_switch": "OFF",
-                }
-                print(json.dumps(output, sort_keys=True))
-                return 0
-            elif args.role in ("STANDARD_WORKER", "DEEP_WORKER"):
-                selected_ep = "GEMINI_FLASH_HIGH" if args.role == "STANDARD_WORKER" else "PLUS_LUNA"
-                meta = policy.endpoint_resolution[selected_ep]
-                output = {
-                    "role": args.role,
-                    "mode": mode.value,
-                    "selected_endpoint": selected_ep,
-                    "model": meta.get("model", ""),
-                    "effort": meta.get("effort", ""),
-                    "core_validation_status": "REQUEST_VALID",
-                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
-                    "master_switch": "OFF",
-                }
-                print(json.dumps(output, sort_keys=True))
-                return 0
-            elif args.role == "VERIFIER":
-                output = {
-                    "role": "VERIFIER",
-                    "mode": mode.value,
-                    "implementer_endpoint": args.implementer or "unknown",
-                    "implementer_independence_group": "unknown",
-                    "selected_endpoint": "OPUS_4_6_THINKING",
-                    "model": "nine-router/ag/claude-opus-4-6-thinking",
-                    "effort": "high",
-                    "failure_domain": "opus",
-                    "independence_group": "opus",
-                    "core_validation_status": "REQUEST_VALID",
-                    "routing_authority": "LEGACY_WRAPPER_AUTHORITY",
-                    "master_switch": "OFF",
-                }
-                print(json.dumps(output, sort_keys=True))
-                return 0
+            legacy_out = _legacy_select(
+                role=args.role,
+                skill=args.skill,
+                implementer=args.implementer,
+                attempt=args.attempt,
+                validator=validator,
+                policy=policy,
+            )
+            print(json.dumps(legacy_out, sort_keys=True))
+            return 0
 
+        # Runtime mode-aware selection when Master Switch is ON
         def _is_domain_eligible(dom: str) -> bool:
             return domain_eligible(dom, now=now_ts, path=args.health_path, policy=policy)
 
         health_excl = excluded_endpoints(policy, now=now_ts, path=args.health_path)
+
         if args.role == "BOSS":
             dec = shadow_boss_binding(
                 mode=mode,
@@ -268,6 +315,8 @@ def main(argv: list[str] | None = None) -> int:
                 "failure_domain": dec.failure_domain,
                 "core_validation_status": dec.core_validation_status,
                 "continuity_status": dec.continuity_status,
+                "routing_authority": "RUNTIME_MODE_AWARE_ROUTING",
+                "master_switch": "ON",
             }
 
         elif args.role in ("SCOUT", "STANDARD_WORKER", "DEEP_WORKER"):
@@ -315,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
                 "table_used": dec.table_used,
                 "core_validation_status": dec.core_validation_status,
                 "bucket": dec.selection_evidence.bucket,
+                "routing_authority": "RUNTIME_MODE_AWARE_ROUTING",
+                "master_switch": "ON",
             }
 
         elif args.role == "VERIFIER":
@@ -367,6 +418,8 @@ def main(argv: list[str] | None = None) -> int:
                 "independence_group": dec.selected_independence_group,
                 "core_validation_status": dec.core_validation_status,
                 "bucket": dec.selection_evidence.bucket,
+                "routing_authority": "RUNTIME_MODE_AWARE_ROUTING",
+                "master_switch": "ON",
             }
 
         # Print JSON output
