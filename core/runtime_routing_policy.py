@@ -167,8 +167,8 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
         verified = ep_data.get("verified", False)
         if isinstance(verified, bool) and not verified:
             eligibility = ep_data.get("eligibility")
-            if eligibility != "unverified":
-                _fail(f"unverified endpoint {ep_id} must have eligibility='unverified'")
+            if eligibility not in ("unverified", "disabled"):
+                _fail(f"unverified/disabled endpoint {ep_id} must have eligibility in ('unverified', 'disabled')")
         if ep_id == "PLUS_LUNA_XHIGH" and verified is True:
             _fail("PLUS_LUNA_XHIGH must remain unverified until upstream gate passes")
         parsed_endpoints[ep_id] = ep_data

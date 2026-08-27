@@ -1,8 +1,8 @@
-"""Shadow Scout, Standard Worker, and Deep Worker dispatch facade (Tasks 5 & 6).
+"""Shadow Scout, Standard Worker, and Deep Worker dispatch facade (Tasks 5, 6 & 12).
 
 Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.1, §5.2, §5.3, §5.4, §5.5, §5.5a, §5.6, §5.7, §10, §11, §13.1)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 5 & 6)
+docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.1, §5.2, §5.3, §5.4, §5.5, §5.5a, §5.6, §5.7, §10, §11, §13.1, §13.2)
+docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 5, 6 & 12)
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Collection, Optional
 
 from core.policy_validator import PolicyValidator
+from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 from core.runtime_routing_policy import (
     RuntimePolicy,
@@ -107,9 +108,8 @@ def _should_use_ox_overlay(
     domain_eligible: Optional[Callable[[str], bool]],
 ) -> bool:
     """Determine whether the OX overlay table should be used for STANDARD_WORKER."""
-    # 1. Static policy eligibility for OX_ALPHA
     ox_meta = policy.endpoint_resolution.get("OX_ALPHA", {})
-    if not ox_meta.get("verified", False) or ox_meta.get("eligibility") != "eligible":
+    if not ox_meta.get("enabled", True) or not ox_meta.get("verified", False) or ox_meta.get("eligibility") != "eligible":
         return False
 
     state = policy.ox_overlay
@@ -154,12 +154,12 @@ def select_for_role(
         table_used = "base"
         candidates = weights_for(policy, role, mode, ox_overlay_active=False)
 
-    # Pre-selection filtering: gather unverified endpoints in policy metadata + caller exclusions
+    # Pre-selection filtering: gather disabled/unverified endpoints in policy metadata + caller exclusions
     combined_exclusions = set(excluded_endpoints or ())
     unverified_found: list[str] = []
 
     for ep, meta in policy.endpoint_resolution.items():
-        if not meta.get("verified", False) or meta.get("eligibility") != "eligible":
+        if not meta.get("enabled", True) or not meta.get("verified", False) or meta.get("eligibility") != "eligible":
             combined_exclusions.add(ep)
             if any(c.endpoint_id == ep for c in candidates):
                 unverified_found.append(ep)
@@ -169,7 +169,7 @@ def select_for_role(
     except NoEligibleCandidateError as exc:
         if unverified_found and not (set(c.endpoint_id for c in candidates) - set(unverified_found)):
             raise PolicyEndpointUnverifiedError(
-                f"Filtering unverified endpoints {unverified_found} left zero eligible candidates for {role}/{mode.value}."
+                f"Filtering unverified/disabled endpoints {unverified_found} left zero eligible candidates for {role}/{mode.value}."
             ) from exc
         raise
 
@@ -180,16 +180,10 @@ def select_for_role(
     dom = _domain_of(policy, selected_ep)
     grp = group_of(policy, selected_ep)
 
-    # Core PolicyValidator check
-    if validator is None:
-        validator = PolicyValidator()
-
-    core_ok, core_err = validator.validate_requested_endpoint(selected_ep)
-    if core_ok:
-        eff_ok, eff_err = validator.validate_endpoint_effort(selected_ep, effort)
-        core_status = "REQUEST_VALID" if eff_ok else f"CORE_REQUEST_INVALID: {eff_err}"
-    else:
-        core_status = f"CORE_REQUEST_INVALID: {core_err}"
+    # Runtime Endpoint validation (Core OR validated runtime catalog)
+    endpoint_val = RuntimeEndpointValidator(core_validator=validator, runtime_policy=policy)
+    val_ok, val_err = endpoint_val.validate_endpoint(selected_ep, effort=effort)
+    core_status = "REQUEST_VALID" if val_ok else f"CORE_REQUEST_INVALID: {val_err}"
 
     return DispatchDecision(
         endpoint_id=selected_ep,

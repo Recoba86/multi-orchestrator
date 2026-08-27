@@ -1,8 +1,8 @@
-"""Reviewer Independence Selector (Task 7).
+"""Reviewer Independence Selector (Tasks 7 & 12).
 
 Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.8)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Task 7)
+docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.8, §13.2)
+docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 7 & 12)
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Callable, Collection, Optional
 
 from core.policy_validator import PolicyValidator
+from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 from core.runtime_routing_policy import (
     CandidateWeight,
@@ -129,12 +130,12 @@ def select_reviewer(
         else:
             stage3_survivors.append(c)
 
-    # Stage 4: Static endpoint eligibility (verified == True and eligibility == 'eligible')
+    # Stage 4: Static endpoint eligibility (enabled == True, verified == True, eligibility == 'eligible')
     static_ineligible: list[str] = []
     stage4_survivors: list[CandidateWeight] = []
     for c in stage3_survivors:
         meta = policy.endpoint_resolution.get(c.endpoint_id, {})
-        if not meta.get("verified", False) or meta.get("eligibility") != "eligible":
+        if not meta.get("enabled", True) or not meta.get("verified", False) or meta.get("eligibility") != "eligible":
             static_ineligible.append(c.endpoint_id)
         else:
             stage4_survivors.append(c)
@@ -173,16 +174,10 @@ def select_reviewer(
     dom = _domain_of(policy, selected_ep)
     grp = group_of(policy, selected_ep)
 
-    # Stage 7: Core PolicyValidator verification
-    if validator is None:
-        validator = PolicyValidator()
-
-    core_ok, core_err = validator.validate_requested_endpoint(selected_ep)
-    if core_ok:
-        eff_ok, eff_err = validator.validate_endpoint_effort(selected_ep, effort)
-        core_status = "REQUEST_VALID" if eff_ok else f"CORE_REQUEST_INVALID: {eff_err}"
-    else:
-        core_status = f"CORE_REQUEST_INVALID: {core_err}"
+    # Stage 7: Runtime Endpoint validation (Core OR runtime catalog)
+    endpoint_val = RuntimeEndpointValidator(core_validator=validator, runtime_policy=policy)
+    val_ok, val_err = endpoint_val.validate_endpoint(selected_ep, effort=effort)
+    core_status = "REQUEST_VALID" if val_ok else f"CORE_REQUEST_INVALID: {val_err}"
 
     return ReviewerDecision(
         mode=mode,

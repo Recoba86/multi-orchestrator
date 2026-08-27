@@ -1,8 +1,8 @@
-"""Shadow Boss mode eligibility and binding computation (Task 4).
+"""Shadow Boss mode eligibility and binding computation (Tasks 4 & 12).
 
 Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§2.2, §2.3, §2.4)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Task 4)
+docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§2.2, §2.3, §2.4, §13.2)
+docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 4 & 12)
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Collection, Optional
 
 from core.policy_validator import PolicyValidator
+from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 from core.runtime_routing_policy import (
     RuntimePolicy,
@@ -90,15 +91,7 @@ def shadow_boss_binding(
     existing_mission_boss: Optional[str] = None,
     validator: Optional[PolicyValidator] = None,
 ) -> ShadowBossDecision:
-    """Compute shadow-mode Boss binding decision without spawning or mutating state.
-
-    Walks the mode-specific priority chain in strict order.
-    The first candidate that passes static policy eligibility, domain health,
-    and explicit exclusions is selected.
-
-    If `existing_mission_boss` is supplied and valid, preserves Boss continuity
-    regardless of mode changes.
-    """
+    """Compute shadow-mode Boss binding decision without spawning or mutating state."""
     if not isinstance(mode, RoutingMode):
         raise ValueError(f"mode must be a RoutingMode instance, got {mode!r}")
 
@@ -109,8 +102,7 @@ def shadow_boss_binding(
     explicit_exclusions = set(excluded_endpoints or ())
     gpt_plus_endpoints = set(policy.domains.get("gpt_plus", None).endpoint_ids if "gpt_plus" in policy.domains else ())
 
-    if validator is None:
-        validator = PolicyValidator()
+    endpoint_val = RuntimeEndpointValidator(core_validator=validator, runtime_policy=policy)
 
     # 1. Boss continuity check
     if existing_mission_boss:
@@ -120,13 +112,8 @@ def shadow_boss_binding(
             effort = meta.get("effort", "")
             dom = _domain_of(policy, existing_mission_boss)
 
-            # Core validation check
-            core_ok, core_err = validator.validate_requested_endpoint(existing_mission_boss)
-            if core_ok:
-                eff_ok, eff_err = validator.validate_endpoint_effort(existing_mission_boss, effort)
-                core_status = "REQUEST_VALID" if eff_ok else f"INVALID_EFFORT: {eff_err}"
-            else:
-                core_status = f"CORE_ENDPOINT_INVALID: {core_err}"
+            val_ok, val_err = endpoint_val.validate_endpoint(existing_mission_boss, effort=effort)
+            core_status = "REQUEST_VALID" if val_ok else f"CORE_ENDPOINT_INVALID: {val_err}"
 
             return ShadowBossDecision(
                 mode=mode,
@@ -158,7 +145,7 @@ def shadow_boss_binding(
 
         # Check static policy eligibility
         meta = policy.endpoint_resolution.get(ep)
-        if not meta or not meta.get("verified", False) or meta.get("eligibility") != "eligible":
+        if not meta or not meta.get("enabled", True) or not meta.get("verified", False) or meta.get("eligibility") != "eligible":
             exclusions_recorded.append((ep, REASON_STATIC_INELIGIBLE))
             continue
 
@@ -183,13 +170,8 @@ def shadow_boss_binding(
     effort = res.get("effort", "")
     dom = _domain_of(policy, selected)
 
-    # Core PolicyValidator verification
-    core_ok, core_err = validator.validate_requested_endpoint(selected)
-    if core_ok:
-        eff_ok, eff_err = validator.validate_endpoint_effort(selected, effort)
-        core_status = "REQUEST_VALID" if eff_ok else f"INVALID_EFFORT: {eff_err}"
-    else:
-        core_status = f"CORE_ENDPOINT_INVALID: {core_err}"
+    val_ok, val_err = endpoint_val.validate_endpoint(selected, effort=effort)
+    core_status = "REQUEST_VALID" if val_ok else f"CORE_ENDPOINT_INVALID: {val_err}"
 
     return ShadowBossDecision(
         mode=mode,

@@ -1,7 +1,6 @@
-# Declarative runtime routing configuration for SolMode and GrokMode (Phase 1B Task 2)
+# Declarative runtime routing configuration and endpoint catalog (Task 12)
 #
-# NORMATIVE SPEC: docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md
-# DO NOT MODIFY weights or topology without spec amendment and validation pass.
+# NORMATIVE SPEC: docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§13.2)
 
 schema_version: 1
 
@@ -23,7 +22,6 @@ failure_domains:
     - "OX_ALPHA"
 
 # Reviewer independence groups (used to enforce implementer != reviewer family)
-# OCG_LUNA has an independent capacity domain (opencode_go_capacity) but belongs to gpt_family
 independence_groups:
   gpt_family:
     - "SOL_HIGH"
@@ -49,54 +47,63 @@ global_targets:
   cheap: 7.0
   opus: 6.0
 
-# Opportunistic OX overlay toggle state: enabled | disabled | auto
-ox_overlay: auto
+# Opportunistic OX overlay toggle state: enabled | disabled | auto (disabled in production per Task 12)
+ox_overlay: disabled
 
-# Endpoint resolution metadata
+# Runtime endpoint catalog & resolution metadata
 endpoint_resolution:
   GEMINI_FLASH_HIGH:
     model: "nine-router/ag/gemini-3.7-flash-high"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
   PLUS_LUNA:
     model: "gpt-5.6-luna"
     effort: "max"
+    enabled: true
     verified: true
     eligibility: "eligible"
   PLUS_LUNA_XHIGH:
     model: "gpt-5.6-luna"
     effort: "xhigh"
+    enabled: true
     verified: false
     eligibility: "unverified"
   OCG_LUNA:
     model: "opencode-go-responses/gpt-5.6-luna"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
   STEP_3_7_FLASH:
     model: "nine-router/stepplan/step-3.7-flash"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
   GROK_4_6_HIGH:
     model: "nine-router/gcli/grok-4.6-high"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
   OPUS_4_6_THINKING:
     model: "nine-router/ag/claude-opus-4-6-thinking"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
   OX_ALPHA:
     model: "nine-router/OX-ALpha"
     effort: "default"
-    verified: true
-    eligibility: "eligible"
+    enabled: false
+    verified: false
+    eligibility: "disabled"
   SOL_HIGH:
     model: "gpt-5.6-sol"
     effort: "high"
+    enabled: true
     verified: true
     eligibility: "eligible"
 
