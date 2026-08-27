@@ -126,6 +126,7 @@ MODEL_POLICY_MODULES=(
 )
 MODEL_POLICY_MODULES+=( "policy_validator" )
 RUNTIME_ROUTING_MODULES=(
+  "runtime_routing_mode"
   "runtime_routing_policy"
   "runtime_weighted_selector"
   "runtime_boss_binding"
@@ -170,8 +171,13 @@ if [[ ! -x "${ORCHESTRATOR_ROUTING_BIN}" ]]; then
   FAILED=1
 else
   echo "[PASS] orchestrator-routing is executable"
+  if ! PYTHONDONTWRITEBYTECODE=1 "${ORCHESTRATOR_ROUTING_BIN}" --config-path "${RUNTIME_ROUTING_CONFIG}" validate >/dev/null 2>&1; then
+    echo "[FAIL] Installed runtime-routing.yaml validation failed" >&2
+    FAILED=1
+  else
+    echo "[PASS] Installed runtime-routing.yaml is valid"
+  fi
 fi
-# 1c. Installed Commands Execute Read-Only
 echo "--- Verifying Installed Commands Execute Read-Only ---"
 if [[ ! -x "${DOCTOR}" ]]; then
     echo "[FAIL] Doctor is not executable: ${DOCTOR}" >&2

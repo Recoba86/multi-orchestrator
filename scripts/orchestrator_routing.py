@@ -227,14 +227,32 @@ def main(argv: list[str] | None = None) -> int:
             policy = load_runtime_policy(args.config_path)
             config_status = "VALID"
             total_models = len(policy.endpoint_resolution)
+            active_eps = [
+                ep for ep, m in sorted(policy.endpoint_resolution.items())
+                if m.get("enabled", True) and m.get("verified", False) and m.get("eligibility") == "eligible"
+            ]
+            disabled_eps = [
+                ep for ep, m in sorted(policy.endpoint_resolution.items())
+                if not m.get("enabled", True) or m.get("eligibility") == "disabled"
+            ]
+            fail_closed_eps = [
+                ep for ep, m in sorted(policy.endpoint_resolution.items())
+                if not m.get("verified", False) or m.get("eligibility") == "unverified"
+            ]
         except Exception:
             config_status = "INVALID"
             total_models = 0
+            active_eps = []
+            disabled_eps = []
+            fail_closed_eps = []
 
         print("=== Multi-Orchestrator Routing Status ===")
         print(f"Master Switch:       {'ON (Mode-Aware Routing Active)' if enabled else 'OFF (Legacy Wrapper Authority Active)'}")
         print(f"Persistent Mode:     {mode.value}")
         print(f"Active Config Path:  {args.config_path} ({config_status}, {total_models} endpoints declared)")
+        print(f"Active Endpoints:    {', '.join(active_eps) if active_eps else 'None'}")
+        print(f"Disabled Endpoints:  {', '.join(disabled_eps) if disabled_eps else 'None'}")
+        print(f"Fail-Closed/Unver:   {', '.join(fail_closed_eps) if fail_closed_eps else 'None'}")
         print(f"Health Cooldowns:    {', '.join(unhealthy_doms) if unhealthy_doms else 'None (All domains healthy)'}")
         print(f"State Path:          {args.state_path}")
         print(f"Switch Path:         {args.switch_path}")

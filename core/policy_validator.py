@@ -29,8 +29,17 @@ def load_policy_from_core(core_path: str) -> Dict[str, Any]:
 class PolicyValidator:
     def __init__(self, core_path: Optional[str] = None):
         if core_path is None:
-            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            core_path = os.path.join(repo_root, "core", "ORCHESTRATOR_CORE.md")
+            module_dir = os.path.dirname(os.path.abspath(__file__))
+            # In repo: module_dir is <repo>/core -> repo_root is <repo> -> <repo>/core/ORCHESTRATOR_CORE.md
+            candidate_repo = os.path.join(os.path.dirname(module_dir), "core", "ORCHESTRATOR_CORE.md")
+            # In installed: module_dir is ~/.agents/core -> ~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md
+            candidate_installed = os.path.join(os.path.dirname(module_dir), "orchestrator-shared", "ORCHESTRATOR_CORE.md")
+            if os.path.isfile(candidate_repo):
+                core_path = candidate_repo
+            elif os.path.isfile(candidate_installed):
+                core_path = candidate_installed
+            else:
+                core_path = candidate_repo
         self.core_path = core_path
         self.policy = load_policy_from_core(self.core_path)
         self.endpoints = {ep["id"]: ep for ep in self.policy.get("endpoints", [])}

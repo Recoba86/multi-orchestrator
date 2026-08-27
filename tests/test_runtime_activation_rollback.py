@@ -188,7 +188,12 @@ class OrchestratorRoutingCliTests(unittest.TestCase):
         self.assertIn("Master Switch:", res.stdout)
         self.assertIn("Persistent Mode:", res.stdout)
         self.assertIn("Active Config Path:", res.stdout)
-
+        self.assertIn("Active Endpoints:", res.stdout)
+        self.assertIn("Disabled Endpoints:", res.stdout)
+        self.assertIn("Fail-Closed/Unver:", res.stdout)
+        self.assertIn("OX_ALPHA", res.stdout)
+        self.assertIn("PLUS_LUNA_XHIGH", res.stdout)
+        self.assertIn("STEP_3_7_FLASH", res.stdout)
     def test_on_off_and_use_commands(self):
         # Default is OFF
         self.assertFalse(is_routing_enabled(self.switch_path))
