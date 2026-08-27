@@ -29,18 +29,36 @@ codex
 Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role subagents.
 ```
 
-## Mode-Aware Routing (Shadow Posture)
+## Mode-Aware Runtime Routing & Operator Commands
 
-Operators can manage persistent routing modes using:
+Operators can manage runtime routing, persistent modes, and emergency rollback using:
 
 ```bash
-orchestrator_mode.py status
-orchestrator_mode.py SolMode
-orchestrator_mode.py GrokMode
+# See complete routing status, switch state, and active config
+orchestrator-routing status
+
+# Enable runtime mode-aware routing
+orchestrator-routing on
+
+# Emergency Soft Rollback: immediately restore legacy wrapper authority
+orchestrator-routing off
+
+# Convenience: set mode AND enable runtime routing
+orchestrator-routing use SolMode
+orchestrator-routing use GrokMode
+
+# Set persistent mode (without toggling master switch)
+orchestrator-routing mode SolMode
+orchestrator-routing mode GrokMode
+
+# Inspect declarative model catalog and validate configuration
+orchestrator-routing models
+orchestrator-routing validate
+orchestrator-routing report
 ```
 
 Trigger phrases:
 - "Use SolMode to plan and execute this feature with multi-role subagents."
 - "Use GrokMode to plan and execute this feature with multi-role subagents."
 
-During shadow posture, submitted requests continue to use legacy wrapper bindings until explicit activation in Task 12.
+When master routing is enabled (`orchestrator-routing on` / `use SolMode`), dynamic mode-aware routing and independent reviewer selection govern submitted requests. When disabled (`orchestrator-routing off`), exact legacy submitted-request authority is restored.

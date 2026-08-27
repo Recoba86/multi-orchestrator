@@ -27,11 +27,10 @@ class ModeDocsVerificationTests(unittest.TestCase):
                 content,
                 f"Missing legacy authority statement in {path}",
             )
-
     def test_both_usage_markdowns_document_cli_and_trigger_phrases(self):
         for path in (SOL_USAGE_MD, GROK_USAGE_MD):
             content = path.read_text(encoding="utf-8")
-            self.assertIn("orchestrator_mode.py", content, f"Missing orchestrator_mode.py in {path}")
+            self.assertIn("orchestrator-routing", content, f"Missing orchestrator-routing in {path}")
             self.assertIn("Use SolMode", content, f"Missing 'Use SolMode' in {path}")
             self.assertIn("Use GrokMode", content, f"Missing 'Use GrokMode' in {path}")
 
