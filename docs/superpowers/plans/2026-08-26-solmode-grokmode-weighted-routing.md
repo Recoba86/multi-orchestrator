@@ -712,35 +712,18 @@ git commit -m "test(routing): shadow-vs-legacy acceptance evidence"
 ```
 Gate: THIS evidence requires operator review BEFORE Task 12 proceeds.
 
-### Task 12: Live activation + rollback verification (explicitly gated)
+### Task 12: Live activation, master kill switch, declarative catalog, and rollback verification
 
-**Precondition:** Operator approval of Task 11 evidence. Executes the
-activation design fixed in spec §2.4 and §12.
+**Precondition:** Operator approval of Task 11 evidence. Executes the Task-12 Operator Activation Amendment.
 
-**Files:**
-- Modify: `core/ORCHESTRATOR_CORE.md` — registry additions
-  `STEP_3_7_FLASH`, `OX_ALPHA` (and `PLUS_LUNA_XHIGH` ONLY after upstream
-  verification per spec §11/§13.1); new section cross-referencing runtime
-  routing; verifier-chain note for domain-level independence.
-- Modify: `skills/sol-luna-orchestrator-v2/SKILL.md`,
-  `skills/grok-orchestrator-v2/SKILL.md` — binding sections switch to
-  mode-checked chains; pre-activation binding text preserved verbatim in the
-  rollback appendix of the new CORE section.
-- Modify: `scripts/installer_lifecycle.py` PAYLOAD — managed publication of
-  runtime-routing modules, CLIs, and `config/runtime-routing.yaml`.
-- Modify: `scripts/verify.sh` — dynamic checks: runtime-routing YAML validates;
-  mode file (if present) contains a legal value; boss chains match CORE;
-  grok_mode tables contain zero gpt_plus endpoints; cx routes absent.
-- Tests: extend `tests/test_verify.py` fixtures for registry additions;
-  new assertions for the checks above; update
-  `tests/test_installer_lifecycle.py` payload expectations.
-
-**Rollback design (implemented and tested in this task):** reverting the two
-SKILL.md binding sections to their quoted pre-activation text restores legacy
-behavior with no other changes required; `verify.sh` gains a
-`--check-rollback-compat` mode asserting the quoted legacy text still matches
-the CORE boss bindings, so rollback compatibility cannot rot silently.
-
+**Activation Architecture:**
+1. **Master ON/OFF Switch:** `core/runtime_routing_switch.py` managing `~/.agents/runtime-routing/enabled.json` (schema v1, atomic 0600 writes, 0700 dir, symlink refusal). Missing/corrupt state fails safe to OFF.
+2. **Unified Operator CLI:** `scripts/orchestrator_routing.py` (installed as executable `orchestrator-routing`) supporting `status`, `on`, `off`, `mode SolMode|GrokMode`, `use SolMode|GrokMode`, `validate`, `models`, and `report`.
+3. **Runtime Validation & Endpoint Catalog:** `core/runtime_endpoint_validator.py` allows valid Core endpoints OR valid + enabled + verified runtime catalog endpoints (`config/runtime-routing.yaml`).
+4. **Model Activations:** `STEP_3_7_FLASH` activated (enabled=true, verified=true); `OX_ALPHA` deactivated (enabled=false, not registered, OX agent removed from active payload); `PLUS_LUNA_XHIGH` remains unverified/fail-closed.
+5. **Wrapper Activation:** `skills/*-v2/SKILL.md` check master switch: if ON, runtime mode-aware routing is authoritative; if OFF, exact legacy wrapper binding is used.
+6. **Installer Payload:** Managed publication of runtime routing modules, CLIs, and config in `scripts/installer_lifecycle.py` and dynamic assertions in `scripts/verify.sh`.
+7. **Rollback Verification:** Mandatory clean-room verification (`OFF -> ON -> VERIFY -> OFF -> VERIFY LEGACY -> ON -> VERIFY`) followed by real environment installation and kill-switch smoke test.
 - [ ] **Step 1: Write failing tests first** (per touched subsystem, in order):
   (a) registry fixtures: extend `tests/test_policy_validator.py` with
   `STEP_3_7_FLASH` / `OX_ALPHA` registry entries.

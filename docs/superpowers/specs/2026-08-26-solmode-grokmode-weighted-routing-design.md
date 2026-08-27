@@ -507,3 +507,17 @@ the following is normative:
   equal the approved table exactly during the unverified window, removing the
   entry is an explicit, separately approved config edit — the edited table
   must itself sum to 100 under schema validation.
+
+### 13.2 Amendment B — Task-12 Operator Activation Amendment
+
+The operator has explicitly approved and finalized the following activation architecture for Task 12:
+1. **Master ON/OFF Switch:** A persistent master enable/disable state (`~/.agents/runtime-routing/enabled.json`, schema version 1) controls runtime routing activation independently of `SolMode`/`GrokMode`.
+   - **OFF:** Runtime weighted routing is bypassed; exact legacy wrapper behavior and submitted-request authority are restored.
+   - **ON:** Runtime mode-aware routing is authoritative for new missions; resumes the currently persisted `SolMode` or `GrokMode`.
+   - **Persistent Mode Independence:** Toggling ON/OFF never erases or alters persistent mode. Health and telemetry never alter ON/OFF state.
+2. **Unified Operator CLI (`orchestrator-routing`):** Canonical CLI supporting `status`, `on`, `off`, `mode SolMode|GrokMode`, `use SolMode|GrokMode`, `validate`, `models`, and `report`.
+3. **Declarative Runtime Endpoint Catalog & Dynamic Validation:** New runtime endpoints can be managed declaratively in `config/runtime-routing.yaml` without selector-code changes. Validation permits valid Core endpoints or valid + enabled + verified runtime catalog endpoints.
+4. **`STEP_3_7_FLASH` Activation:** Activated as a valid runtime endpoint (`nine-router/stepplan/step-3.7-flash`, high effort, cheap domain/group, enabled=true, verified=true).
+5. **`OX_ALPHA` Deactivation:** OX combo is commercially unavailable for this deployment; `OX_ALPHA` is marked `enabled: false` (not activated) and the managed OX agent TOML is excluded from active installation payload.
+6. **`PLUS_LUNA_XHIGH` Stays Fail-Closed:** Remains `verified: false` / `eligibility: unverified`, filtered pre-selection.
+7. **Clean-Room Rollback Verification:** Mandatory clean-room sequence (`OFF -> ON -> VERIFY -> OFF -> VERIFY LEGACY -> ON -> VERIFY`) must pass before installing to real managed environment.
