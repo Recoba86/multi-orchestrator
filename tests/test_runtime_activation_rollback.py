@@ -194,6 +194,74 @@ class OrchestratorRoutingCliTests(unittest.TestCase):
         self.assertIn("OX_ALPHA", res.stdout)
         self.assertIn("PLUS_LUNA_XHIGH", res.stdout)
         self.assertIn("STEP_3_7_FLASH", res.stdout)
+        self.assertIn("Quick actions:", res.stdout)
+        self.assertIn("orchestrator-routing off", res.stdout)
+        self.assertIn("orchestrator-routing on", res.stdout)
+        self.assertIn("orchestrator-routing use SolMode", res.stdout)
+        self.assertIn("orchestrator-routing use GrokMode", res.stdout)
+        self.assertIn("orchestrator-routing models", res.stdout)
+        self.assertIn("orchestrator-routing --help", res.stdout)
+
+    def test_no_args_shows_top_level_help_and_exits_zero(self):
+        res = self._run_cli()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("orchestrator-routing", res.stdout)
+        self.assertIn("status", res.stdout)
+        self.assertIn("on", res.stdout)
+        self.assertIn("off", res.stdout)
+        self.assertIn("mode", res.stdout)
+        self.assertIn("use", res.stdout)
+        self.assertIn("models", res.stdout)
+        self.assertIn("validate", res.stdout)
+        self.assertIn("report", res.stdout)
+
+    def test_help_flags_and_subcommand(self):
+        for flag in ["--help", "-h", "help"]:
+            res = self._run_cli(flag)
+            self.assertEqual(res.returncode, 0, f"{flag} failed: {res.stderr}")
+            self.assertIn("orchestrator-routing", res.stdout)
+            for cmd in ["status", "on", "off", "mode", "use", "models", "validate", "report"]:
+                self.assertIn(cmd, res.stdout)
+
+    def test_subcommand_help_and_help_dispatcher(self):
+        # off --help explains legacy rollback
+        res_off = self._run_cli("off", "--help")
+        self.assertEqual(res_off.returncode, 0)
+        self.assertIn("legacy", res_off.stdout.lower())
+
+        # help off
+        res_help_off = self._run_cli("help", "off")
+        self.assertEqual(res_help_off.returncode, 0)
+        self.assertIn("legacy", res_help_off.stdout.lower())
+
+        # mode --help explains mode setting without toggling enabled state
+        res_mode = self._run_cli("mode", "--help")
+        self.assertEqual(res_mode.returncode, 0)
+        self.assertIn("persistent mode", res_mode.stdout.lower())
+
+        # use --help explains mode setting AND enabling runtime routing
+        res_use = self._run_cli("use", "--help")
+        self.assertEqual(res_use.returncode, 0)
+        self.assertIn("enable", res_use.stdout.lower())
+
+    def test_help_is_strictly_read_only(self):
+        # Ensure no files are created or modified by running help commands
+        self._run_cli()
+        self._run_cli("--help")
+        self._run_cli("-h")
+        self._run_cli("help")
+        self._run_cli("help", "use")
+        self._run_cli("use", "--help")
+        self.assertFalse(self.state_path.exists())
+        self.assertFalse(self.switch_path.exists())
+        self.assertFalse(self.health_path.exists())
+        self.assertFalse(self.telemetry_path.exists())
+
+    def test_invalid_command_fails_with_nonzero(self):
+        res = self._run_cli("banana")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("banana", res.stderr + res.stdout)
+        self.assertIn("orchestrator-routing --help", res.stderr + res.stdout)
     def test_on_off_and_use_commands(self):
         # Default is OFF
         self.assertFalse(is_routing_enabled(self.switch_path))

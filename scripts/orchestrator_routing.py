@@ -59,10 +59,37 @@ from core.runtime_routing_telemetry import (
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "runtime-routing.yaml"
 
 
+class _CustomArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        sys.stderr.write(f"{self.prog}: error: {message}\n")
+        sys.stderr.write(f"See '{self.prog} --help' for available commands and usage.\n")
+        sys.exit(2)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    epilog_text = """Commands & Usage:
+  status                      Show master switch, active mode, health, active/disabled/unverified endpoints
+  on                          Enable runtime mode-aware routing
+  off                         Disable runtime routing (restore legacy wrapper authority, preserve mode)
+  mode <SolMode|GrokMode>     Change persistent mode (without toggling master switch)
+  use <SolMode|GrokMode>      Set persistent mode AND enable runtime routing
+  models                      Display declarative runtime endpoint catalog
+  validate                    Statically validate active runtime routing configuration
+  report                      Display observed telemetry share report
+  help [command]              Show top-level or command-specific help
+
+Quick examples:
+  Turn routing off:           orchestrator-routing off
+  Enable SolMode:             orchestrator-routing use SolMode
+  Enable GrokMode:            orchestrator-routing use GrokMode
+  Check everything:           orchestrator-routing status
+  After editing models:       orchestrator-routing validate
+"""
+    parser = _CustomArgumentParser(
         prog="orchestrator-routing",
-        description="Unified operator CLI for Multi-Orchestrator runtime routing management.",
+        description="orchestrator-routing — Unified Operator CLI for Multi-Orchestrator Runtime Routing Control.",
+        epilog=epilog_text,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--state-path",
@@ -95,17 +122,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to runtime-routing.yaml (default: %(default)s)",
     )
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
 
     # status
-    sub.add_parser("status", help="Show master switch, active mode, health, and config path.")
+    sub.add_parser(
+        "status",
+        help="Show master switch, active mode, health cooldowns, endpoint catalog status, and quick actions.",
+        description="Show master switch, active mode, health cooldowns, endpoint catalog status, and quick actions.",
+    )
 
     # on / off
-    sub.add_parser("on", help="Enable runtime mode-aware routing.")
-    sub.add_parser("off", help="Disable runtime routing (restore legacy authority).")
+    sub.add_parser(
+        "on",
+        help="Enable runtime mode-aware routing (uses currently persisted mode).",
+        description="Enable runtime mode-aware routing. Uses the currently persisted SolMode/GrokMode without automatically modifying the mode.",
+    )
+    sub.add_parser(
+        "off",
+        help="Disable runtime routing (soft rollback to legacy wrapper authority; preserves mode and health state).",
+        description="Disable runtime mode-aware routing and immediately restore legacy wrapper routing authority. Preserves currently persisted mode and health cooldown state.",
+    )
 
     # mode
-    mode_parser = sub.add_parser("mode", help="Change persistent mode without toggling enabled state.")
+    mode_parser = sub.add_parser(
+        "mode",
+        help="Change persistent mode without toggling master ON/OFF state.",
+        description="Change persistent mode (SolMode or GrokMode). Does NOT modify master ON/OFF switch state.",
+    )
     mode_parser.add_argument(
         "mode",
         choices=["SolMode", "GrokMode"],
@@ -113,7 +156,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # use
-    use_parser = sub.add_parser("use", help="Set persistent mode and enable runtime routing.")
+    use_parser = sub.add_parser(
+        "use",
+        help="Convenience action: set persistent mode AND enable runtime routing.",
+        description="Convenience action: sets the requested persistent mode (SolMode or GrokMode) AND explicitly enables runtime mode-aware routing.",
+    )
     use_parser.add_argument(
         "mode",
         choices=["SolMode", "GrokMode"],
@@ -121,25 +168,64 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # validate
-    sub.add_parser("validate", help="Statically validate active runtime routing configuration.")
+    sub.add_parser(
+        "validate",
+        help="Statically validate active runtime routing configuration against schemas and Core rules.",
+        description="Statically validate active runtime routing configuration against schemas, domain definitions, effort rules, and Core endpoint conflict rules. Performs zero routing-state mutation.",
+    )
 
     # models
-    sub.add_parser("models", help="Display declarative runtime endpoint catalog.")
+    sub.add_parser(
+        "models",
+        help="Display declarative runtime endpoint catalog (enabled/disabled/verified status).",
+        description="Display declarative runtime endpoint catalog including enabled, disabled, verified, and fail-closed status.",
+    )
 
     # report
-    report_parser = sub.add_parser("report", help="Display target-share observation report.")
+    report_parser = sub.add_parser(
+        "report",
+        help="Display observed telemetry / dispatch share report (telemetry does not control selection).",
+        description="Display observed telemetry / dispatch share report across permanent target domains and opportunistic overlays. Telemetry is observation-only and does not control routing decisions.",
+    )
     report_parser.add_argument(
         "--window-hours",
         type=float,
         help="Rolling time window in hours to filter events (default: all events)",
     )
 
+    # help
+    help_parser = sub.add_parser(
+        "help",
+        help="Display top-level or command-specific help.",
+        description="Display top-level or command-specific help.",
+    )
+    help_parser.add_argument(
+        "target_command",
+        nargs="?",
+        help="Optional command name to view specific help for (e.g. status, on, off, mode, use, models, validate, report)",
+    )
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
+    if args.command is None:
+        parser.print_help()
+        return 0
+
+    if args.command == "help":
+        if args.target_command:
+            subparsers_action = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
+            if subparsers_action and args.target_command in subparsers_action.choices:
+                subparsers_action.choices[args.target_command].print_help()
+                return 0
+            print(f"Unknown command: '{args.target_command}'. See 'orchestrator-routing --help'.", file=sys.stderr)
+            return 2
+        parser.print_help()
+        return 0
     if args.command == "on":
         set_routing_enabled(True, path=args.switch_path)
         current_mode = read_mode(args.state_path)
@@ -257,8 +343,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"State Path:          {args.state_path}")
         print(f"Switch Path:         {args.switch_path}")
         print(f"Telemetry Path:      {args.telemetry_path}")
+        print("\nQuick actions:")
+        print("  Disable routing : orchestrator-routing off")
+        print("  Enable routing  : orchestrator-routing on")
+        print("  Use SolMode     : orchestrator-routing use SolMode")
+        print("  Use GrokMode    : orchestrator-routing use GrokMode")
+        print("  Models          : orchestrator-routing models")
+        print("  Full help       : orchestrator-routing --help")
         return 0
-
     return 0
 
 

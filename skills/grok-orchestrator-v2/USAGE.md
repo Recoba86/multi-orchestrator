@@ -62,3 +62,14 @@ Trigger phrases:
 - "Use GrokMode to plan and execute this feature with multi-role subagents."
 
 When master routing is enabled (`orchestrator-routing on` / `use GrokMode`), dynamic mode-aware routing and independent reviewer selection govern submitted requests. When disabled (`orchestrator-routing off`), exact legacy submitted-request authority is restored.
+
+## Getting Help
+
+The CLI itself is self-documenting:
+
+```bash
+orchestrator-routing
+orchestrator-routing --help
+orchestrator-routing <command> --help
+orchestrator-routing help <command>
+```
