@@ -16,15 +16,14 @@ SOL_USAGE_MD = REPO_ROOT / "skills" / "sol-luna-orchestrator-v2" / "USAGE.md"
 GROK_SKILL_MD = REPO_ROOT / "skills" / "grok-orchestrator-v2" / "SKILL.md"
 GROK_USAGE_MD = REPO_ROOT / "skills" / "grok-orchestrator-v2" / "USAGE.md"
 
-
 class ModeDocsVerificationTests(unittest.TestCase):
-    def test_both_skill_markdowns_contain_mode_aware_shadow_section(self):
-        heading = "## Mode-Aware Routing (Shadow)"
+    def test_both_skill_markdowns_contain_mode_aware_activation_section(self):
+        heading = "## Mode-Aware Runtime Routing Activation"
         for path in (SOL_SKILL_MD, GROK_SKILL_MD):
             content = path.read_text(encoding="utf-8")
             self.assertIn(heading, content, f"Missing {heading!r} in {path}")
             self.assertIn(
-                "legacy wrapper binding remains authoritative until the explicit activation gate",
+                "Exact legacy submitted-request authority is restored",
                 content,
                 f"Missing legacy authority statement in {path}",
             )

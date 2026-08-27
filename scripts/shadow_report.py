@@ -132,21 +132,20 @@ def generate_acceptance_report() -> dict:
     k_worker_base = SelectionKey(mission_id="worker-base", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
     dec_worker_base = dispatch_role(policy, "STANDARD_WORKER", k_worker_base, validator=validator)
 
-    k_worker_ox = SelectionKey(mission_id="worker-ox", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
-    dec_worker_ox = dispatch_role(policy, "STANDARD_WORKER", k_worker_ox, ox_runtime_eligible=True, validator=validator)
-
-    if dec_worker_base.table_used == "base" and dec_worker_ox.table_used == "overlay":
+    # Under production config (OX disabled), Worker dispatches against base table
+    if dec_worker_base.table_used == "base":
         results["EXPECTED_DIVERGENCE"].append({
-            "scenario": "E_STANDARD_WORKER_BASE_AND_OX",
+            "scenario": "E_STANDARD_WORKER_BASE_POLICY",
             "legacy": "Static chain GEMINI -> PLUS_LUNA -> DEEPSEEK",
-            "shadow": f"Base: {dec_worker_base.selected_endpoint} (50/35/15), Overlay: {dec_worker_ox.selected_endpoint} (30/35/25/10)",
-            "details": "Worker dispatches against base table or OX overlay when eligible",
+            "shadow": f"Base: {dec_worker_base.selected_endpoint} (50/35/15 in SolMode, 75/25 in GrokMode)",
+            "details": "Worker dispatches against mode-aware base table (OX disabled in production)",
         })
     else:
         results["BLOCKER"].append({
-            "scenario": "E_STANDARD_WORKER_BASE_AND_OX",
-            "reason": "Worker base/overlay table selection failed",
+            "scenario": "E_STANDARD_WORKER_BASE_POLICY",
+            "reason": "Worker base table selection failed",
         })
+
 
     # -------------------------------------------------------------------------
     # Scenario G: Deep Worker (SolMode Luna xhigh filtered)
@@ -191,56 +190,43 @@ def generate_acceptance_report() -> dict:
             "reason": "Reviewer independence violation: gpt_family candidate present for gpt_family implementer",
         })
 
-    # -------------------------------------------------------------------------
-    # Pre-Activation Gaps (Planned Core Registry Additions)
-    # -------------------------------------------------------------------------
-    # Gap 1: STEP_3_7_FLASH in Core registry
+    # STEP_3_7_FLASH runtime validity in Task 12
     k_gap_step = SelectionKey(mission_id="gap-step", role="SCOUT", ordinal=0, mode=SOL_MODE)
     dec_gap_step = dispatch_role(
         policy, "SCOUT", k_gap_step,
         excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA"},
         validator=validator,
     )
-    if dec_gap_step.endpoint_id == "STEP_3_7_FLASH" and dec_gap_step.core_validation_status.startswith("CORE_REQUEST_INVALID"):
-        results["PRE_ACTIVATION_GAP"].append({
-            "item": "STEP_3_7_FLASH_CORE_REGISTRATION",
-            "endpoint": "STEP_3_7_FLASH",
-            "model": "nine-router/stepplan/step-3.7-flash",
-            "status": dec_gap_step.core_validation_status,
-            "owned_by": "Task 12 (core/ORCHESTRATOR_CORE.md update)",
+    if dec_gap_step.endpoint_id == "STEP_3_7_FLASH" and dec_gap_step.core_validation_status == "REQUEST_VALID":
+        results["EXPECTED_DIVERGENCE"].append({
+            "scenario": "STEP_3_7_FLASH_RUNTIME_ACTIVATED",
+            "legacy": "Unregistered endpoint in legacy Core",
+            "shadow": "STEP_3_7_FLASH (REQUEST_VALID under runtime catalog)",
+            "details": "STEP_3_7_FLASH activated as valid runtime endpoint in Task 12",
         })
     else:
         results["BLOCKER"].append({
-            "scenario": "STEP_3_7_FLASH_CORE_REGISTRATION",
-            "reason": "STEP_3_7_FLASH selection did not truthfully report Core invalidity",
+            "scenario": "STEP_3_7_FLASH_RUNTIME_ACTIVATED",
+            "reason": f"STEP_3_7_FLASH was expected to be REQUEST_VALID, got {dec_gap_step.core_validation_status}",
         })
-
-    # Gap 2: OX_ALPHA in Core registry
-    k_gap_ox = SelectionKey(mission_id="gap-ox", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
-    dec_gap_ox = dispatch_role(
-        policy, "STANDARD_WORKER", k_gap_ox,
-        excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA", "STEP_3_7_FLASH"},
-        ox_runtime_eligible=True,
-        validator=validator,
-    )
-    if dec_gap_ox.endpoint_id == "OX_ALPHA" and dec_gap_ox.core_validation_status.startswith("CORE_REQUEST_INVALID"):
-        results["PRE_ACTIVATION_GAP"].append({
-            "item": "OX_ALPHA_CORE_REGISTRATION",
-            "endpoint": "OX_ALPHA",
-            "model": "nine-router/OX-ALpha",
-            "status": dec_gap_ox.core_validation_status,
-            "owned_by": "Task 12 (core/ORCHESTRATOR_CORE.md update)",
+    # Status of OX_ALPHA: Intentionally disabled and unselectable per Task 12 Operator Activation Amendment
+    ox_meta = policy.endpoint_resolution.get("OX_ALPHA", {})
+    if not ox_meta.get("enabled", True) and not ox_meta.get("verified", True):
+        results["EXPECTED_DIVERGENCE"].append({
+            "scenario": "OX_ALPHA_INTENTIONALLY_DISABLED",
+            "legacy": "Planned OX-ALpha overlay",
+            "shadow": "OX_ALPHA disabled in production config (zero dispatches)",
+            "details": "OX-ALpha is commercially unavailable for this deployment; disabled and not activated",
         })
     else:
         results["BLOCKER"].append({
-            "scenario": "OX_ALPHA_CORE_REGISTRATION",
-            "reason": "OX_ALPHA selection did not truthfully report Core invalidity",
+            "scenario": "OX_ALPHA_DISABLED_CHECK",
+            "reason": "OX_ALPHA was expected to be disabled in production config",
         })
 
-    # Overall verdict
-    is_ready = len(results["BLOCKER"]) == 0 and len(results["PRE_ACTIVATION_GAP"]) > 0
+    # Overall verdict: READY if zero blockers
+    is_ready = len(results["BLOCKER"]) == 0
     verdict = "READY_FOR_TASK_12" if is_ready else "BLOCKED_FOR_TASK_12"
-
     return {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "verdict": verdict,

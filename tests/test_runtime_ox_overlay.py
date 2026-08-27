@@ -41,6 +41,10 @@ class OxWorkerOverlayTests(unittest.TestCase):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         raw["ox_overlay"] = state
+        if state in ("enabled", "auto"):
+            raw["endpoint_resolution"]["OX_ALPHA"]["enabled"] = True
+            raw["endpoint_resolution"]["OX_ALPHA"]["verified"] = True
+            raw["endpoint_resolution"]["OX_ALPHA"]["eligibility"] = "eligible"
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
             yaml.safe_dump(raw, tf)
             temp_path = Path(tf.name)
@@ -49,6 +53,12 @@ class OxWorkerOverlayTests(unittest.TestCase):
         finally:
             temp_path.unlink(missing_ok=True)
 
+    def test_production_config_has_ox_disabled_and_unselectable(self):
+        """Task 12: In production config, OX is disabled and unselectable."""
+        key = SelectionKey(mission_id="prod-ox", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
+        dec = dispatch_role(self.policy, "STANDARD_WORKER", key, ox_runtime_eligible=True, validator=self.validator)
+        self.assertEqual(dec.table_used, "base")
+        self.assertNotIn("OX_ALPHA", dec.effective_candidates)
     # -------------------------------------------------------------------------
     # OVERLAY TABLE SELECTION: disabled / enabled / auto
     # -------------------------------------------------------------------------
@@ -237,28 +247,13 @@ class OxWorkerOverlayTests(unittest.TestCase):
         self.assertEqual(dec.effort, "default")
         self.assertEqual(dec.failure_domain, "ox_combo")
         self.assertEqual(dec.independence_group, "ox_combo")
-        # OX_ALPHA is not yet in Core endpoint registry -> CORE_REQUEST_INVALID
-        self.assertTrue(dec.core_validation_status.startswith("CORE_REQUEST_INVALID"))
-        self.assertIn("OX_ALPHA", dec.core_validation_status)
+        self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
 
 class OxAgentDeclarationTests(unittest.TestCase):
-    def test_ox_agent_toml_exists_and_parses(self):
-        self.assertTrue(OX_AGENT_TOML.is_file(), f"Missing {OX_AGENT_TOML}")
-        with open(OX_AGENT_TOML, "rb") as f:
-            data = tomllib.load(f)
-
-        self.assertEqual(data.get("name"), "router_nine_router_ox_alpha")
-        self.assertEqual(data.get("model_provider"), "codex-router")
-        self.assertEqual(data.get("model"), "nine-router/OX-ALpha")
-
-        instructions = data.get("developer_instructions", "")
-        self.assertIn("Hub-and-Spoke", instructions)
-        self.assertIn("Do not spawn, delegate to, or orchestrate additional agents or subagents.", instructions)
-        self.assertIn("Do not communicate directly with peer workers or reviewers.", instructions)
-        self.assertIn("Do not create nested delegation chains.", instructions)
-        self.assertIn("Return your result only to the parent Boss.", instructions)
-
+    def test_ox_agent_toml_is_removed_from_active_payload(self):
+        """Task 12: OX managed agent TOML must be removed from active installer payload."""
+        self.assertFalse(OX_AGENT_TOML.exists(), f"OX agent {OX_AGENT_TOML} should not exist in active payload")
 
 if __name__ == "__main__":
     unittest.main()

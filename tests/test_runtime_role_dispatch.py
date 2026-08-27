@@ -200,19 +200,17 @@ class RuntimeRoleDispatchTests(unittest.TestCase):
         self.assertEqual(dec_valid.endpoint_id, "GEMINI_FLASH_HIGH")
         self.assertEqual(dec_valid.core_validation_status, "REQUEST_VALID")
 
-        # STEP_3_7_FLASH is NOT in current Core registry -> CORE_REQUEST_INVALID
-        key_invalid = SelectionKey(mission_id="core-inval", role="SCOUT", ordinal=0, mode=SOL_MODE)
-        dec_invalid = dispatch_role(
+        # In Task 12, STEP_3_7_FLASH is validated and active -> REQUEST_VALID
+        key_step = SelectionKey(mission_id="core-step", role="SCOUT", ordinal=0, mode=SOL_MODE)
+        dec_step = dispatch_role(
             self.policy,
             "SCOUT",
-            key_invalid,
+            key_step,
             excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA"},
             validator=self.validator,
         )
-        self.assertEqual(dec_invalid.endpoint_id, "STEP_3_7_FLASH")
-        self.assertTrue(dec_invalid.core_validation_status.startswith("CORE_REQUEST_INVALID"))
-        # Verify NO reroll occurred; STEP_3_7_FLASH was indeed returned as selected
-        self.assertEqual(dec_invalid.selected_endpoint, "STEP_3_7_FLASH")
+        self.assertEqual(dec_step.endpoint_id, "STEP_3_7_FLASH")
+        self.assertEqual(dec_step.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
     # METADATA & POLICY UNMUTATED

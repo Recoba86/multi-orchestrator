@@ -12,7 +12,7 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
-
+import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(REPO_ROOT))
@@ -256,33 +256,48 @@ class FailureDomainHealthTests(unittest.TestCase):
         t0 = 1000000
         key = SelectionKey(mission_id="ox-health", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
 
-        # Initially healthy auto -> overlay table used
-        dec_init = dispatch_role(
-            self.policy, "STANDARD_WORKER", key,
-            domain_eligible=lambda dom: domain_eligible(dom, now=t0, path=self.health_path, policy=self.policy),
-            validator=self.validator,
-        )
-        self.assertEqual(dec_init.table_used, "overlay")
+        # Load policy fixture with ox_overlay=auto and OX_ALPHA eligible
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+        raw["ox_overlay"] = "auto"
+        raw["endpoint_resolution"]["OX_ALPHA"]["enabled"] = True
+        raw["endpoint_resolution"]["OX_ALPHA"]["verified"] = True
+        raw["endpoint_resolution"]["OX_ALPHA"]["eligibility"] = "eligible"
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+            yaml.safe_dump(raw, tf)
+            tf_path = Path(tf.name)
 
-        # OX 503 error
-        record_failure("ox_combo", FailureKind.HTTP_503, now=t0, path=self.health_path, policy=self.policy)
+        try:
+            auto_policy = load_runtime_policy(tf_path)
 
-        # In cooldown -> base table used
-        dec_cool = dispatch_role(
-            self.policy, "STANDARD_WORKER", key,
-            domain_eligible=lambda dom: domain_eligible(dom, now=t0 + 10, path=self.health_path, policy=self.policy),
-            validator=self.validator,
-        )
-        self.assertEqual(dec_cool.table_used, "base")
+            # Initially healthy auto -> overlay table used
+            dec_init = dispatch_role(
+                auto_policy, "STANDARD_WORKER", key,
+                domain_eligible=lambda dom: domain_eligible(dom, now=t0, path=self.health_path, policy=auto_policy),
+                validator=self.validator,
+            )
+            self.assertEqual(dec_init.table_used, "overlay")
 
-        # After expiry -> overlay table used again
-        dec_exp = dispatch_role(
-            self.policy, "STANDARD_WORKER", key,
-            domain_eligible=lambda dom: domain_eligible(dom, now=t0 + 1800, path=self.health_path, policy=self.policy),
-            validator=self.validator,
-        )
-        self.assertEqual(dec_exp.table_used, "overlay")
+            # OX 503 error
+            record_failure("ox_combo", FailureKind.HTTP_503, now=t0, path=self.health_path, policy=auto_policy)
 
+            # In cooldown -> base table used
+            dec_cool = dispatch_role(
+                auto_policy, "STANDARD_WORKER", key,
+                domain_eligible=lambda dom: domain_eligible(dom, now=t0 + 10, path=self.health_path, policy=auto_policy),
+                validator=self.validator,
+            )
+            self.assertEqual(dec_cool.table_used, "base")
+
+            # After expiry -> overlay table used again
+            dec_exp = dispatch_role(
+                auto_policy, "STANDARD_WORKER", key,
+                domain_eligible=lambda dom: domain_eligible(dom, now=t0 + 1800, path=self.health_path, policy=auto_policy),
+                validator=self.validator,
+            )
+            self.assertEqual(dec_exp.table_used, "overlay")
+        finally:
+            tf_path.unlink(missing_ok=True)
     # -------------------------------------------------------------------------
     # 10. SHADOW INTEGRATION: REVIEWER HEALTH FILTERING (Task 7)
     # -------------------------------------------------------------------------

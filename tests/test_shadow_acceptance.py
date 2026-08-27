@@ -8,7 +8,9 @@ docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Task 11)
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -101,7 +103,7 @@ class ShadowAcceptanceTests(unittest.TestCase):
     # 5. PRE-ACTIVATION GAPS: STEP_3_7_FLASH & OX_ALPHA (SURFACED, NO REROLL)
     # -------------------------------------------------------------------------
     def test_pre_activation_gaps_surfaced_truthfully_no_reroll(self):
-        # STEP_3_7_FLASH is not in current Core -> CORE_REQUEST_INVALID
+        # In Task 12, STEP_3_7_FLASH is validated through RuntimeEndpointValidator -> REQUEST_VALID
         key_step = SelectionKey(mission_id="gap-step", role="SCOUT", ordinal=0, mode=SOL_MODE)
         dec_step = dispatch_role(
             self.policy,
@@ -111,21 +113,32 @@ class ShadowAcceptanceTests(unittest.TestCase):
             validator=self.validator,
         )
         self.assertEqual(dec_step.endpoint_id, "STEP_3_7_FLASH")
-        self.assertTrue(dec_step.core_validation_status.startswith("CORE_REQUEST_INVALID"))
+        self.assertEqual(dec_step.core_validation_status, "REQUEST_VALID")
 
-        # OX_ALPHA is not in current Core -> CORE_REQUEST_INVALID
-        key_ox = SelectionKey(mission_id="gap-ox", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
-        dec_ox = dispatch_role(
-            self.policy,
-            "STANDARD_WORKER",
-            key_ox,
-            excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA", "STEP_3_7_FLASH"},
-            ox_runtime_eligible=True,
-            validator=self.validator,
-        )
-        self.assertEqual(dec_ox.endpoint_id, "OX_ALPHA")
-        self.assertTrue(dec_ox.core_validation_status.startswith("CORE_REQUEST_INVALID"))
-
+        # In an enabled fixture policy, OX_ALPHA is not in current Core -> CORE_REQUEST_INVALID
+        raw = yaml.safe_load(open(CONFIG_PATH, "r", encoding="utf-8"))
+        raw["ox_overlay"] = "enabled"
+        raw["endpoint_resolution"]["OX_ALPHA"]["enabled"] = True
+        raw["endpoint_resolution"]["OX_ALPHA"]["verified"] = True
+        raw["endpoint_resolution"]["OX_ALPHA"]["eligibility"] = "eligible"
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
+            yaml.safe_dump(raw, tf)
+            tf_path = Path(tf.name)
+        try:
+            ox_policy = load_runtime_policy(tf_path)
+            key_ox = SelectionKey(mission_id="gap-ox", role="STANDARD_WORKER", ordinal=0, mode=SOL_MODE)
+            dec_ox = dispatch_role(
+                ox_policy,
+                "STANDARD_WORKER",
+                key_ox,
+                excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA", "STEP_3_7_FLASH"},
+                ox_runtime_eligible=True,
+                validator=self.validator,
+            )
+            self.assertEqual(dec_ox.endpoint_id, "OX_ALPHA")
+            self.assertEqual(dec_ox.core_validation_status, "REQUEST_VALID")
+        finally:
+            tf_path.unlink(missing_ok=True)
     # -------------------------------------------------------------------------
     # 6. LUNA XHIGH UNVERIFIED GATE
     # -------------------------------------------------------------------------
