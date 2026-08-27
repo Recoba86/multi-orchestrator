@@ -49,12 +49,34 @@ PAYLOAD = [
     ("core/model_intelligence.py", ".agents/core/model_intelligence.py"),
     ("core/model_policy.py", ".agents/core/model_policy.py"),
     ("core/model_resolver.py", ".agents/core/model_resolver.py"),
+    ("core/policy_validator.py", ".agents/core/policy_validator.py"),
+    ("core/runtime_routing_mode.py", ".agents/core/runtime_routing_mode.py"),
+    ("core/runtime_routing_policy.py", ".agents/core/runtime_routing_policy.py"),
+    ("core/runtime_weighted_selector.py", ".agents/core/runtime_weighted_selector.py"),
+    ("core/runtime_boss_binding.py", ".agents/core/runtime_boss_binding.py"),
+    ("core/runtime_role_dispatch.py", ".agents/core/runtime_role_dispatch.py"),
+    ("core/runtime_reviewer_selector.py", ".agents/core/runtime_reviewer_selector.py"),
+    ("core/runtime_routing_health.py", ".agents/core/runtime_routing_health.py"),
+    ("core/runtime_routing_telemetry.py", ".agents/core/runtime_routing_telemetry.py"),
+    ("core/runtime_routing_switch.py", ".agents/core/runtime_routing_switch.py"),
+    ("core/runtime_endpoint_validator.py", ".agents/core/runtime_endpoint_validator.py"),
+    ("config/runtime-routing.yaml", ".agents/config/runtime-routing.yaml"),
     ("scripts/doctor.py", ".agents/bin/doctor"),
     ("scripts/configure_models.py", ".agents/bin/configure-models"),
+    ("scripts/orchestrator_mode.py", ".agents/bin/orchestrator-mode"),
+    ("scripts/orchestrator_routing.py", ".agents/bin/orchestrator-routing"),
+    ("scripts/route_model.py", ".agents/bin/route-model"),
 ]
 
 # Managed payload destinations that must be executable on disk.
-EXECUTABLE_PAYLOAD_NAMES = ("mission-trace", "doctor", "configure-models")
+EXECUTABLE_PAYLOAD_NAMES = (
+    "mission-trace",
+    "doctor",
+    "configure-models",
+    "orchestrator-mode",
+    "orchestrator-routing",
+    "route-model",
+)
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 MIGRATION_OMISSION_STATES = frozenset(("modified", "missing"))

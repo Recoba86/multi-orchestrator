@@ -124,6 +124,22 @@ MODEL_POLICY_MODULES=(
   "model_policy"
   "model_resolver"
 )
+MODEL_POLICY_MODULES+=( "policy_validator" )
+RUNTIME_ROUTING_MODULES=(
+  "runtime_routing_policy"
+  "runtime_weighted_selector"
+  "runtime_boss_binding"
+  "runtime_role_dispatch"
+  "runtime_reviewer_selector"
+  "runtime_routing_health"
+  "runtime_routing_telemetry"
+  "runtime_routing_switch"
+  "runtime_endpoint_validator"
+)
+ORCHESTRATOR_ROUTING_BIN="${TARGET_HOME}/.agents/bin/orchestrator-routing"
+ROUTE_MODEL_BIN="${TARGET_HOME}/.agents/bin/route-model"
+ORCHESTRATOR_MODE_BIN="${TARGET_HOME}/.agents/bin/orchestrator-mode"
+RUNTIME_ROUTING_CONFIG="${TARGET_HOME}/.agents/config/runtime-routing.yaml"
 
 # 1. Existence Checks
 assert_file_exists "${CORE}"
@@ -140,6 +156,21 @@ assert_file_exists "${DOCTOR}"
 assert_file_exists "${CONFIGURE_MODELS}"
 assert_file_exists "${MODELS_CONFIG}"
 
+echo "--- Verifying Installed Runtime Routing Payload ---"
+for module in "${RUNTIME_ROUTING_MODULES[@]}"; do
+  assert_file_exists "${TARGET_HOME}/.agents/core/${module}.py"
+done
+assert_file_exists "${ORCHESTRATOR_ROUTING_BIN}"
+assert_file_exists "${ROUTE_MODEL_BIN}"
+assert_file_exists "${ORCHESTRATOR_MODE_BIN}"
+assert_file_exists "${RUNTIME_ROUTING_CONFIG}"
+
+if [[ ! -x "${ORCHESTRATOR_ROUTING_BIN}" ]]; then
+  echo "[FAIL] orchestrator-routing is not executable" >&2
+  FAILED=1
+else
+  echo "[PASS] orchestrator-routing is executable"
+fi
 # 1c. Installed Commands Execute Read-Only
 echo "--- Verifying Installed Commands Execute Read-Only ---"
 if [[ ! -x "${DOCTOR}" ]]; then
@@ -178,7 +209,6 @@ ALL_LEAF_AGENTS=(
   "router-model-opencode-go-responses-gpt-5-6-luna.toml"
   "router-model-custom-qwen3-8-27b.toml"
   "router-model-nine-router-stepplan-step-3-7-flash.toml"
-  "router-model-nine-router-ox-alpha.toml"
 )
 
 echo "--- Verifying All Shipped Leaf Agent Declarations ---"
@@ -243,10 +273,10 @@ import json, os, re, sys, tomllib, yaml
 from pathlib import Path
 
 core_path = sys.argv[1]
-agent_paths = sys.argv[2:11]
-config_paths = sys.argv[11:13]
-manifest_path = sys.argv[13] if len(sys.argv) > 13 else ""
-target_home = Path(sys.argv[14]).resolve() if len(sys.argv) > 14 else None
+agent_paths = sys.argv[2:10]
+config_paths = sys.argv[10:12]
+manifest_path = sys.argv[12] if len(sys.argv) > 12 else ""
+target_home = Path(sys.argv[13]).resolve() if len(sys.argv) > 13 else None
 toml_failures = []
 
 omitted_paths = set()
@@ -330,11 +360,6 @@ expected_agents = {
         "kind": "router",
         "name": "router_nine_router_stepplan_step_3_7_flash",
         "model": "nine-router/stepplan/step-3.7-flash",
-    },
-    "router-model-nine-router-ox-alpha.toml": {
-        "kind": "router",
-        "name": "router_nine_router_ox_alpha",
-        "model": "nine-router/OX-ALpha",
     },
 }
 
@@ -648,7 +673,6 @@ print("[PASS] Verifier chains validated dynamically: self-conflicts and model-fa
   "${CODEX_AGENTS}/router-model-opencode-go-responses-gpt-5-6-luna.toml" \
   "${CODEX_AGENTS}/router-model-custom-qwen3-8-27b.toml" \
   "${CODEX_AGENTS}/router-model-nine-router-stepplan-step-3-7-flash.toml" \
-  "${CODEX_AGENTS}/router-model-nine-router-ox-alpha.toml" \
   "${SOL_CONFIG}" "${GROK_CONFIG}" "${MANIFEST_FILE}" "${TARGET_HOME}"; then
   echo "[FAIL] Dynamic Routing verification failed" >&2
   FAILED=1
