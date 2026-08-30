@@ -5,6 +5,26 @@ All notable changes to the Orchestrator project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-30
+
+### Added
+- **Mode-Aware Weighted Runtime Routing (SolMode / GrokMode):**
+  - Persistent manual mode state storage (`~/.agents/runtime-routing/mode.json`) and CLI (`orchestrator-mode status|SolMode|GrokMode`).
+  - Master activation switch (`orchestrator-routing on|off|status`) with immediate legacy rollback kill-switch.
+  - Pure deterministic weighted model selection algorithm based on single SHA-256 cumulative bucket.
+  - Failure-domain health cooldown tracking with automatic TTL expiration.
+  - Append-only routing telemetry and target-share aggregate report generator.
+  - Declarative runtime routing configuration in `config/runtime-routing.yaml`.
+  - Extended test suite with 407 passing unit and integration tests.
+
+## [1.2.2] - 2026-08-25
+
+### Added
+- **Provider-Agnostic Model Policy Framework & RC4 Release:**
+  - Declarative role configuration via `config/models.yaml` for planner, scout, worker, and reviewer roles.
+  - Read-only doctor diagnostic tool (`scripts/doctor.py`) and safe configuration CLI (`scripts/configure-models.py`).
+  - Atomic manifest v1 to v2 installer migration with ownership tracking and backup capabilities.
+
 ## [1.2.1] - 2026-08-19
 
 ### Added
