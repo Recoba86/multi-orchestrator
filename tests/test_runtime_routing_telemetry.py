@@ -187,7 +187,7 @@ class RoutingTelemetryTests(unittest.TestCase):
         for _ in range(7):
             events.append(self._sample_event(capacity_domain="cheap", endpoint_id="STEP_3_7_FLASH"))
         for _ in range(6):
-            events.append(self._sample_event(capacity_domain="opus", endpoint_id="OPUS_4_6_THINKING"))
+            events.append(self._sample_event(capacity_domain="opus", endpoint_id="OPUS_COMBO"))
         for _ in range(20):
             events.append(self._sample_event(capacity_domain="ox_combo", endpoint_id="OX_ALPHA", table_used="overlay"))
 
@@ -249,7 +249,7 @@ class RoutingTelemetryTests(unittest.TestCase):
             "print(dec.selected_endpoint)"
         )
         out = subprocess.check_output([sys.executable, "-c", code], cwd=REPO_ROOT, text=True).strip()
-        self.assertEqual(out, "GEMINI_FLASH_HIGH")
+        self.assertEqual(out, "GEMINI_FLASH_MEDIUM")
 
 
 class ShadowControllerCliTests(unittest.TestCase):
@@ -283,15 +283,15 @@ class ShadowControllerCliTests(unittest.TestCase):
         data = json.loads(res.stdout)
         self.assertEqual(data["role"], "SCOUT")
         self.assertEqual(data["mode"], "SolMode")
-        self.assertEqual(data["selected_endpoint"], "GEMINI_FLASH_HIGH")
-        self.assertEqual(data["model"], "nine-router/ag/gemini-3.7-flash-high")
+        self.assertEqual(data["selected_endpoint"], "GEMINI_FLASH_MEDIUM")
+        self.assertEqual(data["model"], "nine-router/ag/gemini-3.7-flash-medium")
         self.assertEqual(data["effort"], "high")
         self.assertEqual(data["core_validation_status"], "REQUEST_VALID")
 
         # Verify telemetry event was appended
         events, _ = read_telemetry_events(self.telemetry_path)
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0].endpoint_id, "GEMINI_FLASH_HIGH")
+        self.assertEqual(events[0].endpoint_id, "GEMINI_FLASH_MEDIUM")
 
     def test_cli_select_boss_grokmode(self):
         # Set mode to GrokMode
@@ -320,7 +320,7 @@ class ShadowControllerCliTests(unittest.TestCase):
         data = json.loads(res.stdout)
         self.assertEqual(data["role"], "VERIFIER")
         self.assertEqual(data["implementer_endpoint"], "SOL_HIGH")
-        self.assertEqual(data["implementer_independence_group"], "gpt_family")
+        self.assertEqual(data["implementer_independence_group"], "sol_family")
         self.assertNotIn(data["selected_endpoint"], ("SOL_HIGH", "PLUS_LUNA", "PLUS_LUNA_XHIGH"))
 
     def test_cli_select_with_gpt_plus_cooldown(self):

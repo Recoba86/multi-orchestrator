@@ -138,8 +138,8 @@ class RuntimeEndpointCatalogTests(unittest.TestCase):
             "endpoint": "CUSTOM_FAST_MODEL",
             "weight": 10.0,
         })
-        # rebalance SCOUT SolMode weights to 100
-        raw["role_weights"]["SCOUT"]["SolMode"]["base"][0]["weight"] = 60.0
+        raw["role_weights"]["SCOUT"]["SolMode"]["base"][0]["weight"] = 90.0
+        raw["role_weights"]["SCOUT"]["SolMode"]["base"][1]["weight"] = 0.0
 
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
             yaml.safe_dump(raw, tf)

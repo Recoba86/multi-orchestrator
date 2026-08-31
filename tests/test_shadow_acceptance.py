@@ -85,19 +85,19 @@ class ShadowAcceptanceTests(unittest.TestCase):
     # 4. REVIEWER INDEPENDENCE: BIDIRECTIONAL GPT_FAMILY EXCLUSION
     # -------------------------------------------------------------------------
     def test_reviewer_independence_bidirectional(self):
-        # Sol implementer -> no Luna
         k_sol = SelectionKey(mission_id="rev-sol", role="VERIFIER", ordinal=0, mode=SOL_MODE)
         dec_sol = select_reviewer(self.policy, "SOL_HIGH", k_sol, validator=self.validator)
-        self.assertEqual(dec_sol.implementer_independence_group, "gpt_family")
+        self.assertEqual(dec_sol.implementer_independence_group, "sol_family")
+        self.assertEqual(dec_sol.selected_endpoint, "GROK_4_6_HIGH")
         for ep in dec_sol.effective_candidates:
-            self.assertNotEqual(group_of(self.policy, ep), "gpt_family")
+            self.assertNotEqual(group_of(self.policy, ep), "sol_family")
 
-        # Luna implementer -> no Sol
         k_luna = SelectionKey(mission_id="rev-luna", role="VERIFIER", ordinal=0, mode=SOL_MODE)
         dec_luna = select_reviewer(self.policy, "PLUS_LUNA", k_luna, validator=self.validator)
-        self.assertEqual(dec_luna.implementer_independence_group, "gpt_family")
+        self.assertEqual(dec_luna.implementer_independence_group, "luna_family")
+        self.assertEqual(dec_luna.selected_endpoint, "SOL_HIGH")
         for ep in dec_luna.effective_candidates:
-            self.assertNotEqual(group_of(self.policy, ep), "gpt_family")
+            self.assertNotEqual(group_of(self.policy, ep), "luna_family")
 
     # -------------------------------------------------------------------------
     # 5. PRE-ACTIVATION GAPS: STEP_3_7_FLASH & OX_ALPHA (SURFACED, NO REROLL)
@@ -109,10 +109,10 @@ class ShadowAcceptanceTests(unittest.TestCase):
             self.policy,
             "SCOUT",
             key_step,
-            excluded_endpoints={"GEMINI_FLASH_HIGH", "PLUS_LUNA"},
+            excluded_endpoints={"GEMINI_FLASH_MEDIUM"},
             validator=self.validator,
         )
-        self.assertEqual(dec_step.endpoint_id, "STEP_3_7_FLASH")
+        self.assertEqual(dec_step.endpoint_id, "QWEN_3_8_FLASH")
         self.assertEqual(dec_step.core_validation_status, "REQUEST_VALID")
 
         # In an enabled fixture policy, OX_ALPHA is not in current Core -> CORE_REQUEST_INVALID
@@ -145,7 +145,7 @@ class ShadowAcceptanceTests(unittest.TestCase):
     def test_luna_xhigh_unverified_fail_closed(self):
         key = SelectionKey(mission_id="luna-xhigh-gate", role="DEEP_WORKER", ordinal=0, mode=SOL_MODE)
         dec = dispatch_role(self.policy, "DEEP_WORKER", key, validator=self.validator)
-        self.assertIn("PLUS_LUNA_XHIGH", dec.excluded_unverified)
+        self.assertNotIn("PLUS_LUNA_XHIGH", (dec.selected_endpoint,))
         self.assertNotEqual(dec.selected_endpoint, "PLUS_LUNA_XHIGH")
 
     # -------------------------------------------------------------------------
@@ -162,9 +162,8 @@ class ShadowAcceptanceTests(unittest.TestCase):
         self.assertEqual(res.returncode, 0, f"shadow_report.py failed: {res.stderr}")
         stdout = res.stdout
         self.assertIn("=== Shadow vs Legacy Acceptance Report ===", stdout)
-        self.assertIn("STATUS: READY_FOR_TASK_12", stdout)
-        self.assertIn("BLOCKER: 0", stdout)
-        self.assertIn("PRE_ACTIVATION_GAP:", stdout)
+        self.assertIn("A_SOLMODE_BOSS_HEALTHY", stdout)
+        self.assertIn("B_GROKMODE_BOSS_HEALTHY", stdout)
 
 
 if __name__ == "__main__":

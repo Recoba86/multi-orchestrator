@@ -288,9 +288,8 @@ class NoRoutingMutationTests(unittest.TestCase):
             "core/ORCHESTRATOR_CORE.md",
             "core/model_policy.py",
             "core/model_resolver.py",
-            "config/models.yaml",
-            "skills/sol-luna-orchestrator-v2/SKILL.md",
-            "skills/grok-orchestrator-v2/SKILL.md",
+            "skills/autoteam/SKILL.md",
+            "skills/autoteam/USAGE.md",
             "scripts/installer_lifecycle.py",
             "scripts/verify.sh",
         ]

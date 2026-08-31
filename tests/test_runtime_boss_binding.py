@@ -72,7 +72,7 @@ class ShadowBossBindingTests(unittest.TestCase):
         self.assertEqual(dec.excluded_endpoints[0], ("SOL_HIGH", REASON_TEMPORARY_EXCLUSION))
 
     # -------------------------------------------------------------------------
-    # 3. SolMode Sol+Grok exclusion selects OPUS_4_6_THINKING
+    # 3. SolMode Sol+Grok exclusion selects OPUS_COMBO
     # -------------------------------------------------------------------------
     def test_solmode_sol_and_grok_excluded_selects_opus(self):
         dec = shadow_boss_binding(
@@ -81,8 +81,8 @@ class ShadowBossBindingTests(unittest.TestCase):
             validator=self.validator,
             excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH"},
         )
-        self.assertEqual(dec.selected_endpoint, "OPUS_4_6_THINKING")
-        self.assertEqual(dec.model, "nine-router/ag/claude-opus-4-6-thinking")
+        self.assertEqual(dec.selected_endpoint, "OPUS_COMBO")
+        self.assertEqual(dec.model, "nine-router/Opus")
         self.assertEqual(dec.effort, "high")
         self.assertEqual(dec.failure_domain, "opus")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
@@ -95,7 +95,7 @@ class ShadowBossBindingTests(unittest.TestCase):
             mode=SOL_MODE,
             policy=self.policy,
             validator=self.validator,
-            excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_4_6_THINKING"},
+            excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO"},
         )
         self.assertEqual(dec.selected_endpoint, "GEMINI_FLASH_HIGH")
         self.assertEqual(dec.model, "nine-router/ag/gemini-3.7-flash-high")
@@ -120,7 +120,7 @@ class ShadowBossBindingTests(unittest.TestCase):
         self.assertEqual(dec.continuity_status, REASON_NEW_MISSION_BINDING)
 
     # -------------------------------------------------------------------------
-    # 6. GrokMode Grok exclusion selects OPUS_4_6_THINKING
+    # 6. GrokMode Grok exclusion selects OPUS_COMBO
     # -------------------------------------------------------------------------
     def test_grokmode_grok_excluded_selects_opus(self):
         dec = shadow_boss_binding(
@@ -129,8 +129,8 @@ class ShadowBossBindingTests(unittest.TestCase):
             validator=self.validator,
             excluded_endpoints={"GROK_4_6_HIGH"},
         )
-        self.assertEqual(dec.selected_endpoint, "OPUS_4_6_THINKING")
-        self.assertEqual(dec.model, "nine-router/ag/claude-opus-4-6-thinking")
+        self.assertEqual(dec.selected_endpoint, "OPUS_COMBO")
+        self.assertEqual(dec.model, "nine-router/Opus")
         self.assertEqual(dec.effort, "high")
         self.assertEqual(dec.failure_domain, "opus")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
@@ -143,7 +143,7 @@ class ShadowBossBindingTests(unittest.TestCase):
             mode=GROK_MODE,
             policy=self.policy,
             validator=self.validator,
-            excluded_endpoints={"GROK_4_6_HIGH", "OPUS_4_6_THINKING"},
+            excluded_endpoints={"GROK_4_6_HIGH", "OPUS_COMBO"},
         )
         self.assertEqual(dec.selected_endpoint, "GEMINI_FLASH_HIGH")
         self.assertEqual(dec.model, "nine-router/ag/gemini-3.7-flash-high")
@@ -172,12 +172,12 @@ class ShadowBossBindingTests(unittest.TestCase):
         dec_sol = shadow_boss_binding(mode=SOL_MODE, policy=self.policy)
         self.assertEqual(
             dec_sol.chain,
-            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"),
+            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
         )
         dec_grok = shadow_boss_binding(mode=GROK_MODE, policy=self.policy)
         self.assertEqual(
             dec_grok.chain,
-            ("GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"),
+            ("GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
         )
 
     # -------------------------------------------------------------------------
@@ -212,7 +212,7 @@ class ShadowBossBindingTests(unittest.TestCase):
     # 14. No eligible Boss fails closed explicitly
     # -------------------------------------------------------------------------
     def test_no_eligible_boss_fails_closed(self):
-        all_sol = {"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"}
+        all_sol = {"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"}
         with self.assertRaises(NoEligibleBossError):
             shadow_boss_binding(
                 mode=SOL_MODE,
@@ -220,7 +220,7 @@ class ShadowBossBindingTests(unittest.TestCase):
                 excluded_endpoints=all_sol,
             )
 
-        all_grok = {"GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"}
+        all_grok = {"GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"}
         with self.assertRaises(NoEligibleBossError):
             shadow_boss_binding(
                 mode=GROK_MODE,

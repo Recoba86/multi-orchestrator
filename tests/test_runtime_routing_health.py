@@ -60,7 +60,7 @@ class FailureDomainHealthTests(unittest.TestCase):
         self.assertEqual(domain_of_endpoint(self.policy, "PLUS_LUNA_XHIGH"), "gpt_plus")
         self.assertEqual(domain_of_endpoint(self.policy, "GEMINI_FLASH_HIGH"), "gemini")
         self.assertEqual(domain_of_endpoint(self.policy, "GROK_4_6_HIGH"), "supergrok")
-        self.assertEqual(domain_of_endpoint(self.policy, "OPUS_4_6_THINKING"), "opus")
+        self.assertEqual(domain_of_endpoint(self.policy, "OPUS_COMBO"), "opus")
         self.assertEqual(domain_of_endpoint(self.policy, "STEP_3_7_FLASH"), "cheap")
         self.assertEqual(domain_of_endpoint(self.policy, "OX_ALPHA"), "ox_combo")
 

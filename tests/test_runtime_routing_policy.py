@@ -173,23 +173,23 @@ class RuntimePolicyTests(unittest.TestCase):
         sol_overlay = weights_for(policy, "STANDARD_WORKER", SOL_MODE, True)
         self.assertEqual(
             [(c.endpoint_id, c.weight) for c in sol_overlay],
-            [("OX_ALPHA", 30.0), ("GEMINI_FLASH_HIGH", 35.0), ("PLUS_LUNA", 25.0), ("STEP_3_7_FLASH", 10.0)],
+            [("OX_ALPHA", 30.0), ("GEMINI_FLASH_HIGH", 70.0)],
         )
         grok_overlay = weights_for(policy, "STANDARD_WORKER", GROK_MODE, True)
         self.assertEqual(
             [(c.endpoint_id, c.weight) for c in grok_overlay],
-            [("OX_ALPHA", 30.0), ("GEMINI_FLASH_HIGH", 55.0), ("STEP_3_7_FLASH", 15.0)],
+            [("OX_ALPHA", 30.0), ("GEMINI_FLASH_HIGH", 70.0)],
         )
 
     # -------------------------------------------------------------------------
     # M. GrokMode base worker exact 75/25
     # -------------------------------------------------------------------------
-    def test_grokmode_base_worker_75_25(self):
+    def test_grokmode_base_worker_100(self):
         policy = load_runtime_policy(CONFIG_PATH)
         grok_base = weights_for(policy, "STANDARD_WORKER", GROK_MODE, False)
         self.assertEqual(
             [(c.endpoint_id, c.weight) for c in grok_base],
-            [("GEMINI_FLASH_HIGH", 75.0), ("STEP_3_7_FLASH", 25.0)],
+            [("GEMINI_FLASH_HIGH", 100.0), ("QWEN_3_8_FLASH", 0.0)],
         )
 
     # -------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class RuntimePolicyTests(unittest.TestCase):
         domain = policy.domains["gpt_plus"]
         self.assertEqual(
             set(domain.endpoint_ids),
-            {"SOL_HIGH", "PLUS_LUNA", "PLUS_LUNA_XHIGH"},
+            {"SOL_HIGH", "PLUS_LUNA", "PLUS_LUNA_XHIGH", "PLUS_TERRA"},
         )
 
     # -------------------------------------------------------------------------
@@ -215,17 +215,17 @@ class RuntimePolicyTests(unittest.TestCase):
     # -------------------------------------------------------------------------
     # P. Reviewer GPT-family independence rule
     # -------------------------------------------------------------------------
-    def test_reviewer_gpt_family_independence(self):
+    def test_reviewer_sol_family_independence(self):
         policy = load_runtime_policy(CONFIG_PATH)
         for mode in (SOL_MODE, GROK_MODE):
-            row = policy.reviewer_tables.get(("gpt_family", mode))
+            row = policy.reviewer_tables.get(("sol_family", mode))
             self.assertIsNotNone(row)
             for c in row:
                 grp = group_of(policy, c.endpoint_id)
                 self.assertNotEqual(
                     grp,
-                    "gpt_family",
-                    f"Reviewer table for gpt_family in {mode} contains gpt_family candidate {c.endpoint_id}",
+                    "sol_family",
+                    f"Reviewer table for sol_family in {mode} contains sol_family candidate {c.endpoint_id}",
                 )
 
     # -------------------------------------------------------------------------
@@ -235,11 +235,11 @@ class RuntimePolicyTests(unittest.TestCase):
         policy = load_runtime_policy(CONFIG_PATH)
         self.assertEqual(
             boss_chain_for(policy, SOL_MODE),
-            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"),
+            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
         )
         self.assertEqual(
             boss_chain_for(policy, GROK_MODE),
-            ("GROK_4_6_HIGH", "OPUS_4_6_THINKING", "GEMINI_FLASH_HIGH"),
+            ("GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
         )
 
     # -------------------------------------------------------------------------
@@ -278,13 +278,13 @@ class RuntimePolicyTests(unittest.TestCase):
                 "effort": "high",
                 "verified": True,
             }
-            data["independence_groups"]["gpt_family"].append("CX_SOL")
+            data["independence_groups"]["sol_family"].append("CX_SOL")
         self._assert_validation_error(mod, "nine-router/cx")
 
     def test_rejects_duplicate_candidate_in_table(self):
         def mod(data):
             data["role_weights"]["SCOUT"]["SolMode"]["base"].append(
-                {"endpoint": "GEMINI_FLASH_HIGH", "weight": 0.0}
+                {"endpoint": "GEMINI_FLASH_MEDIUM", "weight": 0.0}
             )
         self._assert_validation_error(mod, "duplicate")
 
