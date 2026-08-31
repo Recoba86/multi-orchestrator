@@ -17,7 +17,7 @@ Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
              │
              ▼ (submits Host requests & relays)
       DEDICATED_BOSS
-  (Skill-Bound: Sol High / Grok High)
+  (Skill-Bound: canonical BOSS chain)
              │ (decisions / actions)
              ▼
        ROOT_CONTROLLER
@@ -26,7 +26,7 @@ Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
    ▼         ▼         ▼                      ▼                       ▼
  Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
 (Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
-(gemini)   (gemini)    (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+(Gemini)   (Gemini)    (Grok)      (!implementer)    (Opus)       (same canonical chain)
    │         │         │              │               │               ▲
    └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
              │ (Structured Factual Execution Results)
@@ -43,10 +43,11 @@ Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
 ## Declarative model configuration (non-executable)
 
 The repository also ships [`config/models.yaml`](../config/models.yaml), a
-provider-agnostic, user-editable description of four logical roles:
-`planner`, `scout`, `worker`, and `reviewer`. Each role records requirements,
-ordered preferred and fallback model-identifier recommendations, and capability
-hints.
+provider-agnostic, user-editable operator policy. Its `operator_policy` section
+defines the exact ordered model/effort chains for BOSS/Planner, Scout, Standard
+Worker, Deep Worker, Verifier, and Premium Second Opinion. The four logical
+roles (`planner`, `scout`, `worker`, and `reviewer`) remain advisory views for
+Doctor and the offline resolver.
 
 This file serves as advisory configuration. Centralized policy semantics in
 `core/model_policy.py` and deterministic offline advisory resolution in
@@ -54,8 +55,12 @@ This file serves as advisory configuration. Centralized policy semantics in
 offline availability observations, capability compatibility, and intelligence
 profiles. Doctor renders structured resolution outcomes, while `configure-models`
 provides explicit, approved configuration updates. These tools are strictly
-offline and advisory; they never mutate Host state, probe remote providers, or
-override normative Core routing (`core/ORCHESTRATOR_CORE.md`).
+offline and advisory; they never mutate Host state or probe remote providers.
+Runtime endpoint IDs are derived deterministically in
+`config/runtime-routing.yaml`, whose validation rejects drift between the
+operator policy and its compatibility views. SolMode and GrokMode remain
+explicit state for compatibility and telemetry; they do not select alternate
+model chains.
 
 ## Six Hard Invariants
 

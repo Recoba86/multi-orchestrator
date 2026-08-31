@@ -72,39 +72,35 @@ class ShadowBossBindingTests(unittest.TestCase):
         self.assertEqual(dec.excluded_endpoints[0], ("SOL_HIGH", REASON_TEMPORARY_EXCLUSION))
 
     # -------------------------------------------------------------------------
-    # 3. SolMode Sol+Grok exclusion selects OPUS_COMBO
+    # 3. SolMode Sol+Grok exclusion selects the cursor Grok fallback
     # -------------------------------------------------------------------------
-    def test_solmode_sol_and_grok_excluded_selects_opus(self):
+    def test_solmode_sol_and_grok_excluded_selects_cursor_grok(self):
         dec = shadow_boss_binding(
             mode=SOL_MODE,
             policy=self.policy,
             validator=self.validator,
             excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH"},
         )
-        self.assertEqual(dec.selected_endpoint, "OPUS_COMBO")
-        self.assertEqual(dec.model, "nine-router/Opus")
+        self.assertEqual(dec.selected_endpoint, "GROK_CURSOR_HIGH")
+        self.assertEqual(dec.model, "nine-router/cu/cursor-grok-4.6-high")
         self.assertEqual(dec.effort, "high")
-        self.assertEqual(dec.failure_domain, "opus")
+        self.assertEqual(dec.failure_domain, "supergrok")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
-    # 4. SolMode Sol+Grok+Opus exclusion selects GEMINI_FLASH_HIGH
+    # 4. Excluding the complete canonical chain fails closed
     # -------------------------------------------------------------------------
-    def test_solmode_sol_grok_opus_excluded_selects_gemini(self):
-        dec = shadow_boss_binding(
-            mode=SOL_MODE,
-            policy=self.policy,
-            validator=self.validator,
-            excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO"},
-        )
-        self.assertEqual(dec.selected_endpoint, "GEMINI_FLASH_HIGH")
-        self.assertEqual(dec.model, "nine-router/ag/gemini-3.7-flash-high")
-        self.assertEqual(dec.effort, "high")
-        self.assertEqual(dec.failure_domain, "gemini")
-        self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
+    def test_solmode_all_boss_candidates_excluded_fails_closed(self):
+        with self.assertRaises(NoEligibleBossError):
+            shadow_boss_binding(
+                mode=SOL_MODE,
+                policy=self.policy,
+                validator=self.validator,
+                excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"},
+            )
 
     # -------------------------------------------------------------------------
-    # 5. GrokMode selects GROK_4_6_HIGH when eligible
+    # 5. GrokMode preserves the canonical Boss primary
     # -------------------------------------------------------------------------
     def test_grokmode_selects_grok_when_eligible(self):
         dec = shadow_boss_binding(
@@ -112,58 +108,56 @@ class ShadowBossBindingTests(unittest.TestCase):
             policy=self.policy,
             validator=self.validator,
         )
-        self.assertEqual(dec.selected_endpoint, "GROK_4_6_HIGH")
-        self.assertEqual(dec.model, "nine-router/gcli/grok-4.6-high")
+        self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
+        self.assertEqual(dec.model, "gpt-5.6-sol")
         self.assertEqual(dec.effort, "high")
-        self.assertEqual(dec.failure_domain, "supergrok")
+        self.assertEqual(dec.failure_domain, "gpt_plus")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
         self.assertEqual(dec.continuity_status, REASON_NEW_MISSION_BINDING)
 
     # -------------------------------------------------------------------------
-    # 6. GrokMode Grok exclusion selects OPUS_COMBO
+    # 6. GrokMode Grok exclusion selects the canonical Sol primary
     # -------------------------------------------------------------------------
-    def test_grokmode_grok_excluded_selects_opus(self):
+    def test_grokmode_grok_excluded_selects_sol(self):
         dec = shadow_boss_binding(
             mode=GROK_MODE,
             policy=self.policy,
             validator=self.validator,
             excluded_endpoints={"GROK_4_6_HIGH"},
         )
-        self.assertEqual(dec.selected_endpoint, "OPUS_COMBO")
-        self.assertEqual(dec.model, "nine-router/Opus")
+        self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
+        self.assertEqual(dec.model, "gpt-5.6-sol")
         self.assertEqual(dec.effort, "high")
-        self.assertEqual(dec.failure_domain, "opus")
+        self.assertEqual(dec.failure_domain, "gpt_plus")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
-    # 7. GrokMode Grok+Opus exclusion selects GEMINI_FLASH_HIGH
+    # 7. GrokMode Sol+Grok exclusion selects the cursor Grok fallback
     # -------------------------------------------------------------------------
-    def test_grokmode_grok_and_opus_excluded_selects_gemini(self):
+    def test_grokmode_sol_and_grok_excluded_selects_cursor_grok(self):
         dec = shadow_boss_binding(
             mode=GROK_MODE,
             policy=self.policy,
             validator=self.validator,
-            excluded_endpoints={"GROK_4_6_HIGH", "OPUS_COMBO"},
+            excluded_endpoints={"SOL_HIGH", "GROK_4_6_HIGH"},
         )
-        self.assertEqual(dec.selected_endpoint, "GEMINI_FLASH_HIGH")
-        self.assertEqual(dec.model, "nine-router/ag/gemini-3.7-flash-high")
+        self.assertEqual(dec.selected_endpoint, "GROK_CURSOR_HIGH")
+        self.assertEqual(dec.model, "nine-router/cu/cursor-grok-4.6-high")
         self.assertEqual(dec.effort, "high")
-        self.assertEqual(dec.failure_domain, "gemini")
+        self.assertEqual(dec.failure_domain, "supergrok")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
-    # 8 & 9. GrokMode never selects SOL_HIGH or permits any gpt_plus Boss candidate
+    # 8 & 9. GrokMode uses the same canonical chain as SolMode
     # -------------------------------------------------------------------------
     def test_grokmode_zero_gpt_plus_eligibility(self):
-        gpt_plus_endpoints = set(self.policy.domains["gpt_plus"].endpoint_ids)
         dec = shadow_boss_binding(
             mode=GROK_MODE,
             policy=self.policy,
             validator=self.validator,
         )
-        self.assertNotIn(dec.selected_endpoint, gpt_plus_endpoints)
-        for ep in dec.chain:
-            self.assertNotIn(ep, gpt_plus_endpoints)
+        self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
+        self.assertEqual(dec.chain, ("SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"))
 
     # -------------------------------------------------------------------------
     # 10 & 11. Boss priority chains preserve configured order without weighting
@@ -172,12 +166,12 @@ class ShadowBossBindingTests(unittest.TestCase):
         dec_sol = shadow_boss_binding(mode=SOL_MODE, policy=self.policy)
         self.assertEqual(
             dec_sol.chain,
-            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
+            ("SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"),
         )
         dec_grok = shadow_boss_binding(mode=GROK_MODE, policy=self.policy)
         self.assertEqual(
             dec_grok.chain,
-            ("GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
+            ("SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"),
         )
 
     # -------------------------------------------------------------------------
@@ -212,7 +206,7 @@ class ShadowBossBindingTests(unittest.TestCase):
     # 14. No eligible Boss fails closed explicitly
     # -------------------------------------------------------------------------
     def test_no_eligible_boss_fails_closed(self):
-        all_sol = {"SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"}
+        all_sol = {"SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"}
         with self.assertRaises(NoEligibleBossError):
             shadow_boss_binding(
                 mode=SOL_MODE,
@@ -220,7 +214,7 @@ class ShadowBossBindingTests(unittest.TestCase):
                 excluded_endpoints=all_sol,
             )
 
-        all_grok = {"GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"}
+        all_grok = {"SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH"}
         with self.assertRaises(NoEligibleBossError):
             shadow_boss_binding(
                 mode=GROK_MODE,
@@ -283,7 +277,7 @@ class ShadowBossBindingTests(unittest.TestCase):
         dec_sol = shadow_boss_binding(mode=SOL_MODE, policy=self.policy)
         dec_grok = shadow_boss_binding(mode=GROK_MODE, policy=self.policy)
         self.assertEqual(dec_sol.selected_endpoint, "SOL_HIGH")
-        self.assertEqual(dec_grok.selected_endpoint, "GROK_4_6_HIGH")
+        self.assertEqual(dec_grok.selected_endpoint, "SOL_HIGH")
 
     # -------------------------------------------------------------------------
     # 27. Existing mission Boss continuity prevents mid-mission rebind

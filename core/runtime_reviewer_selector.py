@@ -1,9 +1,4 @@
-"""Reviewer Independence Selector (Tasks 7 & 12).
-
-Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§5.8, §13.2)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Tasks 7 & 12)
-"""
+"""Reviewer independence selector for the canonical Auto Team policy."""
 
 from __future__ import annotations
 
@@ -18,6 +13,7 @@ from core.runtime_routing_policy import (
     RuntimePolicy,
     group_of,
     load_runtime_policy,
+    operator_chain_for,
 )
 from core.runtime_weighted_selector import (
     NoEligibleCandidateError,
@@ -64,7 +60,7 @@ class ReviewerDecision:
         "3_mode_eligibility_exclusion",
         "4_static_policy_eligibility",
         "5_caller_and_health_exclusions",
-        "6_task3_weighted_selection",
+        "6_primary_first_selection",
         "7_core_policy_validation",
     )
 
@@ -89,7 +85,7 @@ def select_reviewer(
     validator: Optional[PolicyValidator] = None,
     domain_eligible: Optional[Callable[[str], bool]] = None,
 ) -> ReviewerDecision:
-    """Select an independent reviewer using the normative 5-stage filter and Task-3 selector."""
+    """Select an independent reviewer using the normative filter and primary-first selector."""
     if not isinstance(key, SelectionKey):
         raise TypeError(f"key must be a SelectionKey instance, got {type(key).__name__}")
 
@@ -101,12 +97,21 @@ def select_reviewer(
 
     imp_group = group_of(policy, implementer_endpoint)
 
-    # Obtain configured reviewer candidate weights for implementer group + mode
+    # Build the reviewer candidate view from the canonical VERIFIER chain.
+    # reviewer_tables remains a validated compatibility view, not a second
+    # source of model-selection policy.
     rev_key = (imp_group, mode)
     if rev_key not in policy.reviewer_tables:
         raise ValueError(f"No reviewer table configured for implementer group {imp_group!r} and mode {mode.value!r}")
 
-    configured_cands = policy.reviewer_tables[rev_key]
+    canonical_chain = operator_chain_for(policy, "VERIFIER")
+    configured_cands = tuple(
+        CandidateWeight(
+            endpoint_id=candidate.endpoint_id,
+            weight=100.0 if index == 0 else 0.0,
+        )
+        for index, candidate in enumerate(canonical_chain)
+    )
     configured_ep_ids = tuple(c.endpoint_id for c in configured_cands)
 
     # Stage 2: Exclude candidates in implementer's same independence group
@@ -119,16 +124,11 @@ def select_reviewer(
         else:
             stage2_survivors.append(c)
 
-    # Stage 3: Mode eligibility (GrokMode forbids gpt_plus failure domain)
+    # Stage 3 is intentionally a no-op. SolMode/GrokMode remain persistent
+    # operator state for compatibility and observability, but neither mode
+    # silently replaces the canonical Auto Team model policy.
     mode_excluded: list[str] = []
-    stage3_survivors: list[CandidateWeight] = []
-    gpt_plus_eps = set(policy.domains.get("gpt_plus", None).endpoint_ids if "gpt_plus" in policy.domains else ())
-
-    for c in stage2_survivors:
-        if mode == GROK_MODE and c.endpoint_id in gpt_plus_eps:
-            mode_excluded.append(c.endpoint_id)
-        else:
-            stage3_survivors.append(c)
+    stage3_survivors = stage2_survivors
 
     # Stage 4: Static endpoint eligibility (enabled == True, verified == True, eligibility == 'eligible')
     static_ineligible: list[str] = []
@@ -161,7 +161,7 @@ def select_reviewer(
             f"({imp_group}) in {mode.value} after filtering."
         )
 
-    # Stage 6: Exactly one Task-3 weighted selection over survivors
+    # Stage 6: Exactly one deterministic primary-first selection over survivors
     try:
         selection_ev = weighted_select(stage5_survivors, key)
     except NoEligibleCandidateError as exc:

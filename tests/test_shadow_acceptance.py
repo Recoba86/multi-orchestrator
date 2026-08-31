@@ -43,11 +43,12 @@ class ShadowAcceptanceTests(unittest.TestCase):
         self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
-    def test_grokmode_boss_healthy_matches_legacy(self):
+    def test_grokmode_boss_healthy_uses_canonical_policy_not_legacy_wrapper(self):
         dec = shadow_boss_binding(mode=GROK_MODE, policy=self.policy, validator=self.validator)
         leg = legacy_binding("grok-orchestrator-v2")
-        self.assertEqual(dec.selected_endpoint, leg)
-        self.assertEqual(dec.selected_endpoint, "GROK_4_6_HIGH")
+        self.assertEqual(leg, "GROK_4_6_HIGH")
+        self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
+        self.assertNotEqual(dec.selected_endpoint, leg)
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
@@ -66,20 +67,22 @@ class ShadowAcceptanceTests(unittest.TestCase):
         self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
 
     # -------------------------------------------------------------------------
-    # 3. GROKMODE ZERO GPT-PLUS DEFENSE
+    # 3. GROKMODE DOES NOT REPLACE THE CANONICAL ROLE POLICY
     # -------------------------------------------------------------------------
-    def test_grokmode_zero_gpt_plus_across_all_roles(self):
-        gpt_plus_eps = set(self.policy.domains["gpt_plus"].endpoint_ids)
-        # Boss
+    def test_grokmode_preserves_canonical_primary_across_roles(self):
         dec_boss = shadow_boss_binding(mode=GROK_MODE, policy=self.policy, validator=self.validator)
-        self.assertNotIn(dec_boss.selected_endpoint, gpt_plus_eps)
+        self.assertEqual(dec_boss.selected_endpoint, "SOL_HIGH")
 
-        # Scout, Worker, Deep Worker
-        for role in ("SCOUT", "STANDARD_WORKER", "DEEP_WORKER"):
+        expected = {
+            "SCOUT": "GEMINI_FLASH_MEDIUM",
+            "STANDARD_WORKER": "GEMINI_FLASH_HIGH",
+            "DEEP_WORKER": "GROK_4_6_HIGH",
+        }
+        for role, endpoint in expected.items():
             for ord_i in range(20):
                 key = SelectionKey(mission_id="grok-clean", role=role, ordinal=ord_i, mode=GROK_MODE)
                 dec = dispatch_role(self.policy, role, key, validator=self.validator)
-                self.assertNotIn(dec.selected_endpoint, gpt_plus_eps)
+                self.assertEqual(dec.selected_endpoint, endpoint)
 
     # -------------------------------------------------------------------------
     # 4. REVIEWER INDEPENDENCE: BIDIRECTIONAL GPT_FAMILY EXCLUSION
@@ -116,7 +119,7 @@ class ShadowAcceptanceTests(unittest.TestCase):
         self.assertEqual(dec_step.core_validation_status, "REQUEST_VALID")
 
         # In an enabled fixture policy, OX_ALPHA is not in current Core -> CORE_REQUEST_INVALID
-        raw = yaml.safe_load(open(CONFIG_PATH, "r", encoding="utf-8"))
+        raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         raw["ox_overlay"] = "enabled"
         raw["endpoint_resolution"]["OX_ALPHA"]["enabled"] = True
         raw["endpoint_resolution"]["OX_ALPHA"]["verified"] = True

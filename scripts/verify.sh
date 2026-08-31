@@ -208,6 +208,107 @@ else
     fi
 fi
 
+echo "--- Verifying Canonical Auto Team Policy Planes ---"
+if ! PYTHONDONTWRITEBYTECODE=1 python3 - "${MODELS_CONFIG}" "${RUNTIME_ROUTING_CONFIG}" <<'PY_POLICY'
+import sys
+from pathlib import Path
+
+import yaml
+
+models_path = Path(sys.argv[1])
+runtime_path = Path(sys.argv[2])
+roles = (
+    "BOSS",
+    "SCOUT",
+    "STANDARD_WORKER",
+    "DEEP_WORKER",
+    "VERIFIER",
+    "PREMIUM_SECOND_OPINION",
+)
+advisory_roles = {
+    "planner": "BOSS",
+    "scout": "SCOUT",
+    "worker": "STANDARD_WORKER",
+    "reviewer": "VERIFIER",
+}
+
+try:
+    models = yaml.safe_load(models_path.read_text(encoding="utf-8"))
+    runtime = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    raise SystemExit(f"policy-plane YAML read/parse failure: {exc}")
+
+if not isinstance(models, dict) or not isinstance(runtime, dict):
+    raise SystemExit("policy-plane roots must be mappings")
+
+models_operator = models.get("operator_policy")
+runtime_operator = runtime.get("operator_policy")
+if not isinstance(models_operator, dict) or not isinstance(runtime_operator, dict):
+    raise SystemExit("both policy planes must define operator_policy mappings")
+if set(models_operator) != set(roles) or set(runtime_operator) != set(roles):
+    raise SystemExit("operator_policy roles are not exactly the six canonical roles")
+
+endpoint_resolution = runtime.get("endpoint_resolution")
+if not isinstance(endpoint_resolution, dict):
+    raise SystemExit("runtime endpoint_resolution must be a mapping")
+
+for role in roles:
+    raw_entries = models_operator[role]
+    runtime_entries = runtime_operator[role]
+    if not isinstance(raw_entries, list) or not raw_entries:
+        raise SystemExit(f"models.yaml operator_policy.{role} is empty or invalid")
+    if not isinstance(runtime_entries, list) or not runtime_entries:
+        raise SystemExit(f"runtime operator_policy.{role} is empty or invalid")
+
+    raw_chain = []
+    for entry in raw_entries:
+        if not isinstance(entry, dict) or set(entry) != {"model", "effort"}:
+            raise SystemExit(f"models.yaml operator_policy.{role} entry is invalid")
+        raw_chain.append((entry["model"], entry["effort"]))
+
+    translated = []
+    for model, effort in raw_chain:
+        matches = [
+            endpoint
+            for endpoint, metadata in endpoint_resolution.items()
+            if isinstance(metadata, dict)
+            and metadata.get("model") == model
+            and metadata.get("effort") == effort
+        ]
+        if len(matches) != 1:
+            raise SystemExit(
+                f"models.yaml operator_policy.{role} identity "
+                f"{model!r}/{effort!r} maps to {len(matches)} runtime endpoints"
+            )
+        translated.append(
+            {"endpoint": matches[0], "model": model, "effort": effort}
+        )
+
+    if runtime_entries != translated:
+        raise SystemExit(
+            f"runtime operator_policy.{role} is not the exact deterministic "
+            "translation of models.yaml"
+        )
+
+for advisory_role, operator_role in advisory_roles.items():
+    entry = models.get(advisory_role)
+    if not isinstance(entry, dict):
+        raise SystemExit(f"models.yaml advisory role {advisory_role} is invalid")
+    projected = list(entry.get("preferred", [])) + list(entry.get("fallback", []))
+    expected = [item["model"] for item in models_operator[operator_role]]
+    if projected != expected:
+        raise SystemExit(
+            f"models.yaml {advisory_role} preferred+fallback is not the "
+            f"exact projection of operator_policy.{operator_role}"
+        )
+
+print("[PASS] Canonical Auto Team policy and advisory/runtime translations validated")
+PY_POLICY
+then
+  echo "[FAIL] Canonical Auto Team policy-plane consistency failed" >&2
+  FAILED=1
+fi
+
 # 2. Verify Every Shipped Leaf Agent Declaration
 ALL_LEAF_AGENTS=(
   "luna_max_worker.toml"

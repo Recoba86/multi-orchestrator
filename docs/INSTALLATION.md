@@ -27,13 +27,12 @@ The installer places runtime files in your home directory:
 │   ├── doctor                     # Environment & Resolution Doctor
 │   └── mission-trace              # Trace Persistence Tool
 ├── config/
-│   └── models.yaml                # Unmanaged User Model Configuration
+│   └── models.yaml                # Unmanaged canonical operator policy
 ├── core/                          # Managed Model Policy & Resolver Modules
 ├── orchestrator-shared/
 │   └── ORCHESTRATOR_CORE.md       # Normative Policy & Packet Schemas
 └── skills/
-    ├── sol-luna-orchestrator-v2/  # Sol Parent Wrapper
-    └── grok-orchestrator-v2/      # Grok Parent Wrapper
+    └── autoteam/                  # Canonical Auto Team wrapper
 
 ~/.codex/
 ├── agents/                        # Subagent Declarations (*.toml)
@@ -41,7 +40,10 @@ The installer places runtime files in your home directory:
 └── grok-v2.config.toml            # Grok Profile Configuration
 ```
 
-The installer seeds `~/.agents/config/models.yaml` as an unmanaged, user-owned configuration file for the four logical roles (`planner`, `scout`, `worker`, `reviewer`). It is preserved across upgrades and uninstalls.
+The installer seeds `~/.agents/config/models.yaml` as an unmanaged, user-owned
+configuration file. Its `operator_policy` is the canonical model/effort
+selection for all six Auto Team roles; the four logical-role views are
+advisory projections and are preserved across upgrades and uninstalls.
 
 ---
 
@@ -56,22 +58,26 @@ Validate that all files and safety invariants are correctly installed:
 
 ## 4. Usage in Codex CLI
 
-### Sol Orchestrator Skill (Default)
+### Auto Team Skill (Default)
 ```bash
 codex --profile sol-luna
 ```
 Prompt:
 ```text
-Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role subagents.
+Use $autoteam to plan and execute this feature with multi-role subagents.
 ```
 
-### Grok Orchestrator Skill (Alternative)
+The persistent `SolMode` and `GrokMode` controls are compatibility and
+observability state. With runtime routing enabled, both use the same canonical
+Auto Team model chains; they do not silently replace the operator policy.
+
+### Legacy rollback profiles
 ```bash
 codex --profile grok-v2
 ```
 Prompt:
 ```text
-Use $grok-orchestrator-v2 to plan and execute this feature with multi-role subagents.
+Use the legacy Grok profile only when explicitly rolling back runtime routing.
 ```
 
 ---

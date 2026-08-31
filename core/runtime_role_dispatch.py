@@ -15,16 +15,17 @@ from core.policy_validator import PolicyValidator
 from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 from core.runtime_routing_policy import (
+    CandidateWeight,
     RuntimePolicy,
     group_of,
     load_runtime_policy,
+    operator_chain_for,
     weights_for,
 )
 from core.runtime_weighted_selector import (
     NoEligibleCandidateError,
     SelectionEvidence,
     SelectionKey,
-    select_candidate,
     weighted_select,
 )
 
@@ -152,7 +153,14 @@ def select_for_role(
         candidates = weights_for(policy, role, mode, ox_overlay_active=True)
     else:
         table_used = "base"
-        candidates = weights_for(policy, role, mode, ox_overlay_active=False)
+        canonical_chain = operator_chain_for(policy, role)
+        candidates = tuple(
+            CandidateWeight(
+                endpoint_id=candidate.endpoint_id,
+                weight=100.0 if index == 0 else 0.0,
+            )
+            for index, candidate in enumerate(canonical_chain)
+        )
 
     # Pre-selection filtering: gather disabled/unverified endpoints in policy metadata + caller exclusions
     combined_exclusions = set(excluded_endpoints or ())

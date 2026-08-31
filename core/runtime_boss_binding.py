@@ -16,8 +16,8 @@ from core.runtime_endpoint_validator import RuntimeEndpointValidator
 from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 from core.runtime_routing_policy import (
     RuntimePolicy,
-    boss_chain_for,
     load_runtime_policy,
+    operator_chain_for,
 )
 
 __all__ = [
@@ -99,9 +99,10 @@ def shadow_boss_binding(
     if policy is None:
         policy = load_runtime_policy(_DEFAULT_CONFIG_PATH)
 
-    chain = boss_chain_for(policy, mode)
+    # The operator-selected chain is authoritative. Mode remains observable
+    # state for compatibility and telemetry, but cannot select a second policy.
+    chain = tuple(candidate.endpoint_id for candidate in operator_chain_for(policy, "BOSS"))
     explicit_exclusions = set(excluded_endpoints or ())
-    gpt_plus_endpoints = set(policy.domains.get("gpt_plus", None).endpoint_ids if "gpt_plus" in policy.domains else ())
 
     endpoint_val = RuntimeEndpointValidator(core_validator=validator, runtime_policy=policy)
 
@@ -134,11 +135,6 @@ def shadow_boss_binding(
     selected: Optional[str] = None
 
     for ep in chain:
-        # Check GrokMode GPT-plus exclusion defense
-        if mode == GROK_MODE and ep in gpt_plus_endpoints:
-            exclusions_recorded.append((ep, MODE_EXCLUDED_GPT_PLUS))
-            continue
-
         # Check explicit temporary exclusions
         if ep in explicit_exclusions:
             exclusions_recorded.append((ep, REASON_TEMPORARY_EXCLUSION))

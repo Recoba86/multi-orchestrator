@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Role chains are priority/failover, not weighted load-balancing. Digest/bucket no longer skip a healthy earlier candidate.
+- Restored one canonical operator-selected chain for all six Auto Team roles across advisory `models.yaml` and normative `runtime-routing.yaml`; SolMode/GrokMode no longer override model selection.
 - Reviewer independence uses granular families (`GPT_5_6_SOL` vs `GPT_5_6_LUNA` vs `GPT_5_6_TERRA`). Gemini implementer -> Sol High; Sol implementer -> Grok High.
 - Installer/verifier ship `skills/autoteam` and `runtime_adaptive_scheduler.py`.
 

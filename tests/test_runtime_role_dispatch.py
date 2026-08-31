@@ -64,12 +64,61 @@ class RuntimeRoleDispatchTests(unittest.TestCase):
         )
         self.assertEqual(dec.endpoint_id, "PLUS_LUNA")
 
+    def test_standard_worker_never_uses_ox_or_sol(self):
+        for mode in (SOL_MODE, GROK_MODE):
+            for ordinal in range(20):
+                dec = dispatch_role(
+                    self.policy,
+                    "STANDARD_WORKER",
+                    self._key("STANDARD_WORKER", ordinal, mode),
+                    validator=self.validator,
+                )
+                self.assertNotIn(dec.endpoint_id, {"OX_ALPHA", "SOL_HIGH"})
+                self.assertEqual(dec.table_used, "base")
+
     def test_deep_worker_replicates_grok(self):
         d0 = dispatch_role(self.policy, "DEEP_WORKER", self._key("DEEP_WORKER", 0), validator=self.validator)
         d1 = dispatch_role(self.policy, "DEEP_WORKER", self._key("DEEP_WORKER", 1), validator=self.validator)
         self.assertEqual(d0.endpoint_id, "GROK_4_6_HIGH")
         self.assertEqual(d1.endpoint_id, "GROK_4_6_HIGH")
         self.assertNotEqual(d0.endpoint_id, "SOL_HIGH")
+
+    def test_deep_worker_failover_advances_to_gemini(self):
+        dec = dispatch_role(
+            self.policy,
+            "DEEP_WORKER",
+            self._key("DEEP_WORKER"),
+            excluded_endpoints={"GROK_4_6_HIGH"},
+            validator=self.validator,
+        )
+        self.assertEqual(dec.endpoint_id, "GEMINI_FLASH_HIGH")
+        self.assertIn("GROK_4_6_HIGH", dec.excluded_endpoints)
+
+    def test_explicit_exclusions_honored(self):
+        dec = dispatch_role(
+            self.policy,
+            "STANDARD_WORKER",
+            self._key("STANDARD_WORKER"),
+            excluded_endpoints={"GEMINI_FLASH_HIGH"},
+            validator=self.validator,
+        )
+        self.assertEqual(dec.endpoint_id, "PLUS_LUNA")
+        self.assertIn("GEMINI_FLASH_HIGH", dec.excluded_endpoints)
+
+    def test_metadata_fields_populated_and_policy_unmutated(self):
+        before = repr(self.policy)
+        dec = dispatch_role(
+            self.policy,
+            "SCOUT",
+            self._key("SCOUT"),
+            validator=self.validator,
+        )
+        self.assertEqual(dec.model, "nine-router/ag/gemini-3.7-flash-medium")
+        self.assertEqual(dec.effort, "medium")
+        self.assertEqual(dec.failure_domain, "gemini")
+        self.assertEqual(dec.independence_group, "gemini")
+        self.assertEqual(dec.core_validation_status, "REQUEST_VALID")
+        self.assertEqual(repr(self.policy), before)
 
     def test_unsupported_roles_rejected(self):
         key = self._key("SCOUT")

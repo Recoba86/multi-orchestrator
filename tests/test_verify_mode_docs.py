@@ -10,9 +10,10 @@ AUTOTEAM_USAGE_MD = REPO_ROOT / "skills" / "autoteam" / "USAGE.md"
 
 
 class ModeDocsVerificationTests(unittest.TestCase):
-    def test_skill_markdown_contains_mode_aware_activation_section(self):
+    def test_skill_markdown_contains_mode_independent_activation_section(self):
         content = AUTOTEAM_SKILL_MD.read_text(encoding="utf-8")
-        self.assertIn("## Mode-Aware Runtime Routing Activation", content)
+        self.assertIn("## Runtime Routing Activation", content)
+        self.assertIn("SolMode and GrokMode use the same operator-selected Auto Team chains", content)
         self.assertIn("Exact legacy submitted-request authority is restored", content)
         self.assertIn("$autoteam", content)
 
@@ -35,6 +36,8 @@ class ModeDocsVerificationTests(unittest.TestCase):
             content = path.read_text(encoding="utf-8")
             for token in stale_tokens:
                 self.assertNotIn(token, content, f"Found stale token {token!r} in {path}")
+        self.assertIn("does not replace the canonical Auto Team model chains", AUTOTEAM_USAGE_MD.read_text(encoding="utf-8"))
+        self.assertNotIn("zero GPT Plus throughput", AUTOTEAM_USAGE_MD.read_text(encoding="utf-8"))
 
     def test_wrapper_does_not_instruct_automatic_write_mode(self):
         for path in (AUTOTEAM_SKILL_MD, AUTOTEAM_USAGE_MD):

@@ -210,6 +210,41 @@ class ModelPolicyTests(unittest.TestCase):
             self.assertEqual(list(updated[role]), list(config[role]))
         self.assertEqual(updated["planner"]["preferred"], ["p2", "p1"])
 
+    def test_canonical_operator_policy_translates_exactly_to_runtime_endpoints(self):
+        configuration = model_policy.load_configuration(REPO_ROOT / "config" / "models.yaml")
+        from core.runtime_routing_policy import load_runtime_policy
+        runtime = load_runtime_policy(REPO_ROOT / "config" / "runtime-routing.yaml")
+        translated = model_policy.translate_operator_policy(
+            configuration,
+            runtime.endpoint_resolution,
+        )
+        for role, entries in translated.items():
+            self.assertEqual(
+                entries,
+                tuple(
+                    (entry.endpoint_id, entry.model, entry.effort)
+                    for entry in runtime.operator_policy[role]
+                ),
+            )
+
+    def test_apply_role_selections_reorders_advisory_and_canonical_views(self):
+        configuration = model_policy.load_configuration(REPO_ROOT / "config" / "models.yaml")
+        selected = "gpt-5.6-luna"
+        updated = model_policy.apply_role_selections(configuration, {"worker": selected})
+        self.assertEqual(updated["worker"]["preferred"][0], selected)
+        projected = []
+        for model in updated["worker"]["preferred"] + updated["worker"]["fallback"]:
+            if model not in projected:
+                projected.append(model)
+        self.assertEqual(
+            projected,
+            [selected, "nine-router/ag/gemini-3.7-flash-high"],
+        )
+        self.assertEqual(
+            [entry["model"] for entry in updated["operator_policy"]["STANDARD_WORKER"]],
+            [selected, "nine-router/ag/gemini-3.7-flash-high"],
+        )
+
     def test_mutation_rejects_symlinked_immediate_parent_before_backup(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

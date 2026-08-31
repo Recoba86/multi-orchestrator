@@ -37,15 +37,15 @@ If `~/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md` cannot be read or is una
 ## 2. Orchestration Protocol & Workspace Preflight
 
 1. **Workspace Preflight:** Controller executes preflight checks (`pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git rev-parse HEAD`, `git remote get-url origin`). If `workspace_root != git_toplevel`, abort with `TARGET_WORKSPACE_MISMATCH`.
-2. **Request Dedicated Boss:** Controller checks master routing state. If master routing is enabled (`orchestrator-routing status` / `is_routing_enabled`), resolve Boss via runtime mode-aware Boss binding (`route-model select --role BOSS`); if disabled, submit default `SOL_HIGH` (`gpt-5.6-sol`, High effort). In either state, generate fresh `mission_id`, build `MISSION_IDENTITY`, and submit the request carrying `BOSS_MISSION_PACKET` and requested `fork_turns="none"`; continue only with a distinct Host-returned child identity.
+2. **Request Dedicated Boss:** Controller checks master routing state. If master routing is enabled (`orchestrator-routing status` / `is_routing_enabled`), resolve the Boss from the canonical Auto Team policy (`route-model select --role BOSS`); the persisted SolMode/GrokMode value remains observable operator state and does not replace that policy. If disabled, submit default `SOL_HIGH` (`gpt-5.6-sol`, High effort). In either state, generate fresh `mission_id`, build `MISSION_IDENTITY`, and submit the request carrying `BOSS_MISSION_PACKET` and requested `fork_turns="none"`; continue only with a distinct Host-returned child identity.
 3. **Receive `BOSS_ACTION_PACKET`:** Validate `mission_id`, `workspace_root`, and `repository_identity` match `MISSION_IDENTITY`, then validate requested endpoint/model/effort against Core policy. On mismatch, refuse Host request submission with `MISSION_CONTEXT_MISMATCH`. On success, submit the child request with requested `fork_turns="none"`.
 4. **Lossless Relay:** Controller captures `CHILD_EXECUTION_RESULT`, records trace entry, validates `boss_child_id` matches current mission Boss, and delivers `BOSS_FOLLOWUP_PACKET` to the SAME dedicated Boss.
 5. **Final Decision & Identity Validation:** Boss issues `FINAL_BOSS_DECISION` carrying `mission_id`, `workspace_root`, `repository_identity`, and `boss_child_id`. Controller validates that all identity fields match `MISSION_IDENTITY`. If any field mismatches, abort with `FINAL_DECISION_CONTEXT_MISMATCH`. On successful validation, Controller finalizes Mission Trace, outputs Routing Decisions and Model Telemetry, and delivers factual summary to user.
 
-## Mode-Aware Runtime Routing Activation
+## Runtime Routing Activation
 
 When master routing is **ENABLED** (`orchestrator-routing on` / `use SolMode` / `use GrokMode`):
-1. **Boss Binding:** Submitted Boss requests follow the active mode's Boss priority chain.
+1. **Canonical Role Policy:** SolMode and GrokMode use the same operator-selected Auto Team chains. Mode is retained for explicit operator state, status, telemetry, and compatibility; it is not a model-selection override.
 2. **Worker Routing:** Subagents for `SCOUT`, `STANDARD_WORKER`, and `DEEP_WORKER` are resolved dynamically via the declarative runtime policy (`config/runtime-routing.yaml`).
 3. **Reviewer Independence:** `VERIFIER` assignments enforce bidirectional independence (`Reviewer.model_family != Implementer.model_family`).
 4. **Boss Continuity:** Dedicated Boss continuity across turns is strictly preserved.

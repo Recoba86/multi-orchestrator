@@ -1,14 +1,56 @@
-# User-owned declarative, provider-agnostic role/model configuration for logical roles:
-# planner, scout, worker, reviewer.
+# User-owned declarative operator policy and advisory role views.
 #
-# preferred/fallback entries are ordered optional recommendations/examples; personal and
-# provider identities are replaceable. Evaluated by read-only Doctor and deterministic offline
-# advisory resolver (core/model_policy.py, core/model_resolver.py). Safe explicit updates can be applied via
-# configure-models CLI (--apply --approve --expected-sha256).
+# operator_policy is the canonical Auto Team policy. Its entries preserve the exact
+# requested raw model identity and effort. Runtime endpoint IDs are a deterministic
+# translation of these entries in config/runtime-routing.yaml.
 #
-# Installed unmanaged at ~/.agents/config/models.yaml (seeded on install, preserved across upgrades/uninstall).
-# Does not alter normative Core routing (core/ORCHESTRATOR_CORE.md), probe remote providers, or perform
-# native Host allocation/spawn (HOST_EXTERNAL).
+# planner/scout/worker/reviewer are compatibility views for the advisory Doctor and
+# resolver. Their preferred+fallback order is a lossless projection of operator_policy
+# for BOSS/SCOUT/STANDARD_WORKER/VERIFIER respectively. They do not select a different
+# runtime policy.
+#
+# Installed unmanaged at ~/.agents/config/models.yaml and preserved across upgrades/uninstall.
+# This file does not probe providers or perform native Host allocation/spawn (HOST_EXTERNAL).
+
+operator_policy:
+  BOSS:
+    - model: "gpt-5.6-sol"
+      effort: "high"
+    - model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - model: "nine-router/cu/cursor-grok-4.6-high"
+      effort: "high"
+  SCOUT:
+    - model: "nine-router/ag/gemini-3.7-flash-medium"
+      effort: "medium"
+    - model: "commandcode/qwen3.8-flash"
+      effort: "high"
+  STANDARD_WORKER:
+    - model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+    - model: "gpt-5.6-luna"
+      effort: "max"
+  DEEP_WORKER:
+    - model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+    - model: "gpt-5.6-sol"
+      effort: "high"
+  VERIFIER:
+    - model: "gpt-5.6-sol"
+      effort: "high"
+    - model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - model: "nine-router/Opus"
+      effort: "high"
+    - model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+  PREMIUM_SECOND_OPINION:
+    - model: "nine-router/Opus"
+      effort: "high"
+    - model: "gpt-5.6-terra"
+      effort: "high"
 
 planner:
   requires:
@@ -18,8 +60,7 @@ planner:
     - "gpt-5.6-sol"
     - "nine-router/gcli/grok-4.6-high"
   fallback:
-    - "gpt-5.6-luna"
-    - "opencode-go/deepseek-v4-pro"
+    - "nine-router/cu/cursor-grok-4.6-high"
   capability_hints:
     - "reasoning"
     - "long_context"
@@ -29,10 +70,9 @@ scout:
     - "read-only inspection"
     - "evidence collection"
   preferred:
-    - "nine-router/ag/gemini-3.7-flash-high"
+    - "nine-router/ag/gemini-3.7-flash-medium"
   fallback:
-    - "opencode-go/deepseek-v4-flash"
-    - "gpt-5.6-luna"
+    - "commandcode/qwen3.8-flash"
   capability_hints:
     - "fast"
     - "analysis"
@@ -45,7 +85,6 @@ worker:
     - "nine-router/ag/gemini-3.7-flash-high"
   fallback:
     - "gpt-5.6-luna"
-    - "opencode-go/deepseek-v4-flash"
   capability_hints:
     - "coding"
     - "reasoning"
@@ -55,10 +94,10 @@ reviewer:
     - "read-only verification"
     - "independence from implementer"
   preferred:
-    - "opencode-go-responses/gpt-5.6-luna"
-    - "nine-router/ag/claude-opus-4-6-thinking"
+    - "gpt-5.6-sol"
+    - "nine-router/gcli/grok-4.6-high"
+    - "nine-router/Opus"
   fallback:
-    - "opencode-go/deepseek-v4-pro"
     - "nine-router/ag/gemini-3.7-flash-high"
   capability_hints:
     - "review"

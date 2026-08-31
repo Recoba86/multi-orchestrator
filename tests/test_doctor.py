@@ -57,6 +57,27 @@ class DoctorCommandTests(unittest.TestCase):
             yaml.safe_dump(value, handle, sort_keys=False)
         return Path(handle.name)
 
+    def sync_operator_policy_view(self, configuration, advisory_role):
+        operator_role = {
+            "planner": "BOSS",
+            "scout": "SCOUT",
+            "worker": "STANDARD_WORKER",
+            "reviewer": "VERIFIER",
+        }[advisory_role]
+        existing_efforts = {
+            entry["model"]: entry["effort"]
+            for entry in configuration["operator_policy"][operator_role]
+        }
+        models = []
+        for field in ("preferred", "fallback"):
+            for model in configuration[advisory_role][field]:
+                if model not in models:
+                    models.append(model)
+        configuration["operator_policy"][operator_role] = [
+            {"model": model, "effort": existing_efforts.get(model, "high")}
+            for model in models
+        ]
+
     def write_cache(self, value):
         handle = tempfile.NamedTemporaryFile("w", suffix=".yaml", encoding="utf-8", delete=False)
         self.addCleanup(lambda: Path(handle.name).unlink(missing_ok=True))
@@ -138,6 +159,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_unknown_model_capability_metadata_is_reported_without_incompatibility(self):
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = ["provider/unknown"]
+        self.sync_operator_policy_view(configuration, "planner")
         result = self.run_cli("--config", str(self.write_config(configuration)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -157,6 +179,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_configured_list_order_is_kept_in_output(self):
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = ["first/model", "second/model"]
+        self.sync_operator_policy_view(configuration, "planner")
         result = self.run_cli("--config", str(self.write_config(configuration)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -360,6 +383,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_discovery_is_compared_with_configured_models(self):
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = ["provider/available", "provider/missing"]
+        self.sync_operator_policy_view(configuration, "planner")
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             agents = home / ".codex" / "agents"
@@ -381,6 +405,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_capability_reporting_preserves_discovery_availability_and_exact_identifiers(self):
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = [" provider/model "]
+        self.sync_operator_policy_view(configuration, "planner")
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             profiles = home / ".codex"
@@ -576,6 +601,7 @@ class DoctorCommandTests(unittest.TestCase):
     def test_doctor_discovery_sibling_preservation_and_invalid_count(self):
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = ["provider/sibling-model"]
+        self.sync_operator_policy_view(configuration, "planner")
         config_file = self.write_config(configuration)
 
         home = tempfile.TemporaryDirectory()
@@ -597,6 +623,7 @@ class DoctorCommandTests(unittest.TestCase):
         long_id = "x" * 600
         configuration = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
         configuration["planner"]["preferred"] = [long_id]
+        self.sync_operator_policy_view(configuration, "planner")
         config_file = self.write_config(configuration)
 
         home = tempfile.TemporaryDirectory()

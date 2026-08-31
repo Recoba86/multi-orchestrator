@@ -10,7 +10,7 @@ Every orchestration mission is strictly bound to an immutable `MISSION_IDENTITY`
 ```yaml
 MISSION_IDENTITY:
   mission_id: string                      # Unique identifier per Skill invocation (e.g. mission-1787106000)
-  skill: string                           # Name of invoked skill (sol-luna-orchestrator-v2 | grok-orchestrator-v2)
+  skill: string                           # Name of invoked skill (autoteam; legacy wrapper names retained only for rollback)
   workspace_root: string                  # Canonical requested absolute workspace directory
   git_toplevel: string                    # Output of `git rev-parse --show-toplevel`
   repository_identity: string             # Remote repository URL or stable local repo name
@@ -53,8 +53,8 @@ The repository protocol defines a centralized Hub-and-Spoke topology:
  (Session Model / Control Plane)
              │
              ▼ (submits Host requests & relays)
-      DEDICATED_BOSS
-  (Skill-Bound: Sol High / Grok High)
+       DEDICATED_BOSS
+  (Auto Team policy: Sol, then Grok routes)
              │ (decisions / actions)
              ▼
        ROOT_CONTROLLER
@@ -78,7 +78,7 @@ The repository protocol defines a centralized Hub-and-Spoke topology:
 ```
 
 ### B. Plane Separation & Invariants
-1. **DECISION PLANE (Dedicated Skill-Bound Boss):** The dedicated child requested with the model required by the invoked Skill (e.g. Grok for `grok-orchestrator-v2`, Sol for `sol-luna-orchestrator-v2`) and accepted only after matching Host-returned evidence. Responsible for task understanding, decomposition, role selection, verifier assignment, rework decisions, and task completion evaluation.
+1. **DECISION PLANE (Dedicated Skill-Bound Boss):** For `$autoteam`, the dedicated child is requested from the canonical BOSS chain beginning with Sol; legacy wrapper bindings remain available only when the master switch is explicitly OFF for rollback. The Boss is accepted only after matching Host-returned evidence and is responsible for task understanding, decomposition, role selection, verifier assignment, rework decisions, and task completion evaluation.
 2. **CONTROL PLANE (Root Controller):** The model selected in the active session/UI. Responsible strictly for validating Boss actions against Core policy, submitting protocol-validated requests to the external Host, relaying Host-returned factual results without semantic mutation, managing mission trace persistence, and refusing invalid submissions or continuation.
 3. **EXECUTION PLANE (Workers / Scouts / Verifiers / Reviewers):** Leaf execution subagents.
 
@@ -142,16 +142,16 @@ Effort capability is normatively classified into two distinct dimensions:
 ### C. Registry
 ```yaml
 routing_policy: INITIAL_RELEASE_RC3
-
 endpoints:
   - id: SOL_HIGH
+    family: sol
     capacity_domain: openai_plus_capacity
     transport_domain: openai_native
     provider_route: openai
     model: gpt-5.6-sol
-    accepted_efforts: [low, medium, high, xhigh, max, ultra]
+    accepted_efforts: [high]
     effective_effort_status: PROVEN
-    candidate_roles: [boss]
+    candidate_roles: [boss, deep_worker, verifier]
 
   - id: PLUS_LUNA
     family: luna
@@ -159,29 +159,103 @@ endpoints:
     transport_domain: openai_native
     provider_route: openai
     model: gpt-5.6-luna
-    agent_type: luna_max_worker
-    accepted_efforts: [low, medium, high, max]
-    effective_effort_status: PROVEN # Native OpenAI reasoning parameter differentiation verified
+    accepted_efforts: [max]
+    effective_effort_status: PROVEN
+    candidate_roles: [standard_worker]
+
+  - id: PLUS_TERRA
+    family: terra
+    capacity_domain: openai_plus_capacity
+    transport_domain: openai_native
+    provider_route: openai
+    model: gpt-5.6-terra
+    accepted_efforts: [high]
+    effective_effort_status: PROVEN
+    candidate_roles: [premium_second_opinion]
+
+  - id: GEMINI_FLASH_MEDIUM
+    family: gemini
+    capacity_domain: google_ag_capacity
+    transport_domain: nine_router_transport
+    provider_route: nine-router/ag
+    model: nine-router/ag/gemini-3.7-flash-medium
+    agent_type: router_nine_router_ag_gemini_3_7_flash_medium
+    accepted_efforts: [medium]
+    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    candidate_roles: [scout]
 
   - id: GEMINI_FLASH_HIGH
+    family: gemini
     capacity_domain: google_ag_capacity
     transport_domain: nine_router_transport
     provider_route: nine-router/ag
     model: nine-router/ag/gemini-3.7-flash-high
     agent_type: router_nine_router_ag_gemini_3_7_flash_high
-    accepted_efforts: [low, high, max]
+    accepted_efforts: [high]
     effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    candidate_roles: [standard_worker, deep_worker, verifier]
 
+  - id: QWEN_3_8_FLASH
+    family: qwen
+    capacity_domain: commandcode_capacity
+    transport_domain: commandcode_transport
+    provider_route: commandcode
+    model: commandcode/qwen3.8-flash
+    agent_type: commandcode_qwen3_8_flash
+    accepted_efforts: [high]
+    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    candidate_roles: [scout]
+
+  - id: GROK_4_6_HIGH
+    family: grok
+    capacity_domain: xai_gcli_capacity
+    transport_domain: nine_router_transport
+    provider_route: nine-router/gcli
+    model: nine-router/gcli/grok-4.6-high
+    agent_type: router_nine_router_gcli_grok_4_6_high
+    accepted_efforts: [high]
+    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    candidate_roles: [boss, deep_worker, verifier]
+
+  - id: GROK_CURSOR_HIGH
+    family: grok
+    capacity_domain: xai_cursor_capacity
+    transport_domain: nine_router_transport
+    provider_route: nine-router/cu
+    model: nine-router/cu/cursor-grok-4.6-high
+    agent_type: router_nine_router_cu_cursor_grok_4_6_high
+    accepted_efforts: [high]
+    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    candidate_roles: [boss]
+
+  - id: OPUS_COMBO
+    family: opus
+    capacity_domain: claude_opus_capacity
+    transport_domain: nine_router_transport
+    provider_route: nine-router
+    model: nine-router/Opus
+    agent_type: router_nine_router_opus
+    accepted_efforts: [high]
+    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
+    role: PREMIUM_SECOND_OPINION
+    access: READ_ONLY
+    write_ownership: NONE
+    candidate_roles: [verifier, premium_second_opinion]
+
+  # Legacy endpoints remain registered for rollback and old validator fixtures;
+  # none are members of the canonical Auto Team role chains above.
   - id: DEEPSEEK_FLASH
+    family: deepseek
     capacity_domain: opencode_go_capacity
     transport_domain: nine_router_transport
     provider_route: opencode-go
     model: opencode-go/deepseek-v4-flash
     agent_type: router_opencode_go_deepseek_v4_flash
-    accepted_efforts: [low, high, max]
+    accepted_efforts: [high]
     effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
 
   - id: DEEPSEEK_PRO
+    family: deepseek
     capacity_domain: opencode_go_capacity
     transport_domain: nine_router_transport
     provider_route: opencode-go
@@ -201,54 +275,50 @@ endpoints:
     effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
     policy_max_effort: high
 
-  - id: OPUS_4_6_THINKING # Premium second-opinion reviewer only
-    capacity_domain: claude_opus_ag_capacity # CAPACITY_RELATION_UNKNOWN to google_ag_capacity
+  - id: OPUS_4_6_THINKING
+    family: opus
+    capacity_domain: claude_opus_capacity
     transport_domain: nine_router_transport
     provider_route: nine-router/ag
     model: nine-router/ag/claude-opus-4-6-thinking
     agent_type: router_nine_router_ag_claude_opus_4_6_thinking
-    accepted_efforts: [low, high, max]
+    accepted_efforts: [high]
     effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
-    normal_routing_member: false
-    role: PREMIUM_SECOND_OPINION
-    access: READ_ONLY
-    write_ownership: NONE
-
-  - id: GROK_4_6_HIGH # Metadata candidate & Grok Boss Profile
-    capacity_domain: xai_gcli_capacity
-    transport_domain: nine_router_transport
-    provider_route: nine-router/gcli
-    model: nine-router/gcli/grok-4.6-high
-    accepted_efforts: [high, max]
-    effective_effort_status: ACCEPTED_BUT_EFFECTIVE_UNKNOWN
-    candidate_roles: [boss, deep_worker]
 ```
-
 ### D. Operational Capacity vs. Architecture
 - `ARCHITECTURAL_CORRECTNESS` (the normative validity of chains and safety invariants) is strictly decoupled from `CURRENT_PROVIDER_AVAILABILITY` (transient quotas or outages).
 - Temporary hard exhaustion of `openai_plus_capacity` or other domains is handled via mission-scoped health breakers; it does not alter normative routing design.
 
 ---
-
-## 4. Logical Roles & Initial Release Routing (Option A — Deterministic)
+## 4. Logical Roles & Canonical Auto Team Routing
 
 ```yaml
 role_chains:
-  SCOUT: # Strictly Read-Only; High reasoning for robust discovery, conserves Plus
+  BOSS: # Dedicated Auto Team Planner; ordered priority/failover
     - attempt: 1
-      endpoint: GEMINI_FLASH_HIGH
-      model: nine-router/ag/gemini-3.7-flash-high
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
       effort: high
     - attempt: 2
-      endpoint: DEEPSEEK_FLASH
-      model: opencode-go/deepseek-v4-flash
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
       effort: high
     - attempt: 3
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
+      endpoint: GROK_CURSOR_HIGH
+      model: nine-router/cu/cursor-grok-4.6-high
+      effort: high
+
+  SCOUT: # Read-only discovery
+    - attempt: 1
+      endpoint: GEMINI_FLASH_MEDIUM
+      model: nine-router/ag/gemini-3.7-flash-medium
       effort: medium
+    - attempt: 2
+      endpoint: QWEN_3_8_FLASH
+      model: commandcode/qwen3.8-flash
+      effort: high
 
-  STANDARD_WORKER: # Routine implementation with High reasoning; DeepSeek Flash fallback
+  STANDARD_WORKER: # Bounded implementation
     - attempt: 1
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
@@ -257,27 +327,53 @@ role_chains:
       endpoint: PLUS_LUNA
       model: gpt-5.6-luna
       effort: max
-    - attempt: 3
-      endpoint: DEEPSEEK_FLASH
-      model: opencode-go/deepseek-v4-flash
-      effort: high
 
-  DEEP_WORKER: # Maximum analytical & algorithmic depth
+  DEEP_WORKER: # Deep implementation and analysis
     - attempt: 1
-      endpoint: DEEPSEEK_PRO
-      model: opencode-go/deepseek-v4-pro
-      effort: max
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
     - attempt: 2
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
-      effort: max
-    - attempt: 3
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
-      effort: max
+      effort: high
+    - attempt: 3
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+
+  VERIFIER: # Candidate construction precedes implementer-family filtering
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+
+  PREMIUM_SECOND_OPINION: # Escalation-only read-only review
+    - attempt: 1
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 2
+      endpoint: PLUS_TERRA
+      model: gpt-5.6-terra
+      effort: high
 ```
 
-*Operational Note (Post-Initial Release Candidate):* A Gemini-heavier routing distribution (Option B) is documented as an alternative for environments experiencing frequent OpenAI Plus quota exhaustion.
+SolMode and GrokMode remain persistent operator state for compatibility,
+status, and explicit activation/rollback commands. They do not select an
+alternate model chain or silently replace this canonical Auto Team policy.
 
 ---
 
@@ -479,74 +575,182 @@ IMPLEMENTER_MUST_NOT_VERIFY_ITS_OWN_WORK
 ```
 Every verifier request must specify `fork_turns="none"` and an independent `VERIFICATION_PACKET`; Host context isolation remains `HOST_EXTERNAL`.
 
-### B. Authoritative Implementer-Aware Verifier Routing & Chains
-
 ```yaml
 verifier_chains:
+  SOL_HIGH:
+    - attempt: 1
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 2
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 3
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+  GROK_4_6_HIGH:
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 3
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+  GROK_CURSOR_HIGH:
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 3
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
   GEMINI_FLASH_HIGH:
     - attempt: 1
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
-      effort: max
-    - attempt: 2
-      endpoint: OCG_LUNA
-      model: opencode-go-responses/gpt-5.6-luna
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
       effort: high
-
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
   PLUS_LUNA:
     - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
       effort: high
-    - attempt: 2
-      endpoint: DEEPSEEK_PRO
-      model: opencode-go/deepseek-v4-pro
+  PLUS_TERRA:
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
       effort: high
-
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+  OPUS_COMBO:
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
+  QWEN_3_8_FLASH:
+    - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
+      effort: high
   OCG_LUNA:
     - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
       effort: high
-    - attempt: 2
-      endpoint: DEEPSEEK_PRO
-      model: opencode-go/deepseek-v4-pro
-      effort: high
-
   DEEPSEEK_PRO:
     - attempt: 1
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
+      effort: high
+    - attempt: 2
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
+    - attempt: 3
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
       endpoint: GEMINI_FLASH_HIGH
       model: nine-router/ag/gemini-3.7-flash-high
       effort: high
-    - attempt: 2
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
-      effort: max
-    - attempt: 3
-      endpoint: OCG_LUNA
-      model: opencode-go-responses/gpt-5.6-luna
-      effort: high
-
   DEEPSEEK_FLASH:
     - attempt: 1
-      endpoint: GEMINI_FLASH_HIGH
-      model: nine-router/ag/gemini-3.7-flash-high
+      endpoint: SOL_HIGH
+      model: gpt-5.6-sol
       effort: high
     - attempt: 2
-      endpoint: PLUS_LUNA
-      model: gpt-5.6-luna
-      effort: max
+      endpoint: GROK_4_6_HIGH
+      model: nine-router/gcli/grok-4.6-high
+      effort: high
     - attempt: 3
-      endpoint: OCG_LUNA
-      model: opencode-go-responses/gpt-5.6-luna
+      endpoint: OPUS_COMBO
+      model: nine-router/Opus
+      effort: high
+    - attempt: 4
+      endpoint: GEMINI_FLASH_HIGH
+      model: nine-router/ag/gemini-3.7-flash-high
       effort: high
 ```
 
 #### Verifier Independence & Filtering Invariants:
 1. **Exact Implementer Self-Conflict:** A verifier endpoint must never verify its own implementation (e.g. `GEMINI_FLASH_HIGH` cannot verify `GEMINI_FLASH_HIGH`).
-2. **Luna Model-Family Conflict:** `PLUS_LUNA` and `OCG_LUNA` share the same underlying model family (`gpt-5.6-luna`). Therefore, `PLUS_LUNA` implementations CANNOT be verified by `OCG_LUNA`, and `OCG_LUNA` implementations CANNOT be verified by `PLUS_LUNA`.
-3. **DeepSeek Pro Scope:** `DEEPSEEK_PRO` is reserved primarily for deep worker implementations and specific non-Gemini verifier fallback. It is NOT the normal verifier fallback for `GEMINI_FLASH_HIGH` work.
-4. **Effort Caps:** `OCG_LUNA` has `policy_max_effort: high`, so verifier attempts for `OCG_LUNA` are capped at `high`. `PLUS_LUNA` verifier attempts execute at `max`.
+2. **Cognitive-family independence:** Sol, Luna, and Terra are distinct GPT families; the two Grok routes share one Grok family; Gemini medium and high share one Gemini family.
+3. **Ordered filtering:** Candidate construction follows the canonical verifier chain, then implementer-family exclusion, static eligibility, health eligibility, and primary-first selection.
+4. **Premium second opinion:** `OPUS_COMBO` is attempted before `PLUS_TERRA`, and this escalation chain is separate from normal verifier dispatch.
 
 *Skip semantics:* `SKIPPED_IMPLEMENTER_CONFLICT` and `SKIPPED_HEALTH_SUPPRESSED` do **NOT** consume an attempt number.
 
@@ -567,7 +771,7 @@ To provide complete, auditable operational observability, every mission writes a
 mission:
   mission_id: string
   started_at: string                      # ISO-8601 UTC
-  skill: string                           # grok-orchestrator-v2 | sol-luna-orchestrator-v2
+  skill: string                           # autoteam; legacy wrapper names only for rollback
   status: string                          # IN_PROGRESS | COMPLETE | INCOMPLETE | BLOCKED
 
 workspace:
@@ -583,7 +787,7 @@ controller:
   role: "ROOT_CONTROLLER"
 
 boss:
-  required_endpoint: string               # GROK_4_6_HIGH | SOL_HIGH
+  required_endpoint: string               # SOL_HIGH | GROK_4_6_HIGH | GROK_CURSOR_HIGH
   requested_model: string                 # Canonical model string
   requested_effort: string                # high
   requested_fork_turns: string            # MUST be "none"

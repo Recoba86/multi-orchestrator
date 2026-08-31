@@ -1,4 +1,4 @@
-"""Centralized provider-agnostic policy for the four public logical roles.
+"""Centralized provider-agnostic policy for Auto Team and advisory roles.
 
 This module is the single declarative surface for the policy rules used by the
 resolver. It defines the public logical roles, the outcome taxonomy, the fixed
@@ -37,6 +37,21 @@ from core.model_intelligence import (
 
 PUBLIC_ROLES = ("planner", "scout", "worker", "reviewer")
 ROLE_FIELDS = ("requires", "preferred", "fallback", "capability_hints")
+OPERATOR_ROLES = (
+    "BOSS",
+    "SCOUT",
+    "STANDARD_WORKER",
+    "DEEP_WORKER",
+    "VERIFIER",
+    "PREMIUM_SECOND_OPINION",
+)
+OPERATOR_POLICY_FIELDS = ("model", "effort")
+ADVISORY_TO_OPERATOR_ROLE = {
+    "planner": "BOSS",
+    "scout": "SCOUT",
+    "worker": "STANDARD_WORKER",
+    "reviewer": "VERIFIER",
+}
 
 # Fixed advisory role weights and the coverage gate remain defined in
 # ``model_intelligence``; these aliases give the policy a single import surface.
@@ -77,7 +92,7 @@ class MutationResult:
     before_sha256: str
     after_sha256: str
     backup_path: Path | None
-    updated_configuration: dict[str, dict[str, list[str]]]
+    updated_configuration: dict[str, Any]
 
 
 def _read_yaml(path: Path) -> object:
@@ -97,12 +112,80 @@ def _read_yaml(path: Path) -> object:
         raise ConfigurationError("YAML parse failure") from exc
 
 
-def validate_configuration(value: object) -> dict[str, dict[str, list[str]]]:
-    """Validate the exact four-role declarative schema without reordering it."""
+def _validate_operator_policy(value: object) -> dict[str, list[dict[str, str]]]:
+    """Validate the canonical raw model/effort chains without reordering."""
+    if not isinstance(value, Mapping):
+        raise ConfigurationError("operator_policy must be a mapping")
+
+    unknown_roles = [key for key in value if key not in OPERATOR_ROLES]
+    if unknown_roles:
+        raise ConfigurationError(
+            f"operator_policy contains unknown role(s): {sorted(unknown_roles)}"
+        )
+    missing_roles = [role for role in OPERATOR_ROLES if role not in value]
+    if missing_roles:
+        raise ConfigurationError(
+            f"operator_policy missing required role(s): {', '.join(missing_roles)}"
+        )
+
+    result: dict[str, list[dict[str, str]]] = {}
+    for role in OPERATOR_ROLES:
+        entries = value[role]
+        if not isinstance(entries, list) or not entries:
+            raise ConfigurationError(
+                f"operator_policy.{role} must be a non-empty list"
+            )
+        parsed: list[dict[str, str]] = []
+        seen_models: set[str] = set()
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, Mapping):
+                raise ConfigurationError(
+                    f"operator_policy.{role}[{index}] must be a mapping"
+                )
+            unknown_fields = [
+                field for field in entry if field not in OPERATOR_POLICY_FIELDS
+            ]
+            if unknown_fields:
+                raise ConfigurationError(
+                    f"operator_policy.{role}[{index}] contains unknown field(s): "
+                    f"{sorted(unknown_fields)}"
+                )
+            missing_fields = [
+                field for field in OPERATOR_POLICY_FIELDS if field not in entry
+            ]
+            if missing_fields:
+                raise ConfigurationError(
+                    f"operator_policy.{role}[{index}] missing field(s): "
+                    f"{', '.join(missing_fields)}"
+                )
+            model = entry["model"]
+            effort = entry["effort"]
+            if type(model) is not str or not model.strip():
+                raise ConfigurationError(
+                    f"operator_policy.{role}[{index}].model must be a non-empty string"
+                )
+            if type(effort) is not str or not effort.strip():
+                raise ConfigurationError(
+                    f"operator_policy.{role}[{index}].effort must be a non-empty string"
+                )
+            if model in seen_models:
+                raise ConfigurationError(
+                    f"operator_policy.{role} contains duplicate model {model!r}"
+                )
+            seen_models.add(model)
+            parsed.append({"model": model, "effort": effort})
+        result[role] = parsed
+    return result
+
+
+def validate_configuration(value: object) -> dict[str, Any]:
+    """Validate advisory roles and an optional canonical operator policy."""
     if not isinstance(value, Mapping):
         raise ConfigurationError("configuration root must be a mapping")
 
-    unknown_roles = [key for key in value if key not in PUBLIC_ROLES]
+    unknown_roles = [
+        key for key in value if key not in PUBLIC_ROLES and key != "operator_policy"
+    ]
     if unknown_roles:
         raise ConfigurationError(
             f"configuration contains unknown role(s) (unknown top-level keys or roles: {sorted(unknown_roles)})"
@@ -114,8 +197,11 @@ def validate_configuration(value: object) -> dict[str, dict[str, list[str]]]:
             f"configuration missing required role(s): {', '.join(missing_roles)} (missing roles: {sorted(missing_roles)})"
         )
 
-    result: dict[str, dict[str, list[str]]] = {}
+    result: dict[str, Any] = {}
     for role, entry in value.items():
+        if role == "operator_policy":
+            result[role] = _validate_operator_policy(entry)
+            continue
         if not isinstance(entry, Mapping):
             raise ConfigurationError(f"{role} must be a mapping")
 
@@ -142,10 +228,29 @@ def validate_configuration(value: object) -> dict[str, dict[str, list[str]]]:
             role_entry[field] = list(items)
         result[role] = role_entry
 
+    operator_policy = result.get("operator_policy")
+    if operator_policy is not None:
+        for advisory_role, operator_role in ADVISORY_TO_OPERATOR_ROLE.items():
+            expected = tuple(
+                entry["model"] for entry in operator_policy[operator_role]
+            )
+            actual: list[str] = []
+            seen: set[str] = set()
+            for field in ("preferred", "fallback"):
+                for model in result[advisory_role][field]:
+                    if model not in seen:
+                        seen.add(model)
+                        actual.append(model)
+            if tuple(actual) != expected:
+                raise ConfigurationError(
+                    f"{advisory_role} preferred+fallback does not match "
+                    f"operator_policy.{operator_role}"
+                )
+
     return result
 
 
-def load_configuration(path: str | Path) -> dict[str, dict[str, list[str]]]:
+def load_configuration(path: str | Path) -> dict[str, Any]:
     """Read and validate one configuration file safely."""
     p = Path(path).expanduser()
     if p.is_symlink():
@@ -172,9 +277,9 @@ def compute_file_sha256(path: str | Path) -> str:
 
 
 def apply_role_selections(
-    configuration: Mapping[str, Mapping[str, list[str]]],
+    configuration: Mapping[str, Any],
     selections: Mapping[str, str],
-) -> dict[str, dict[str, list[str]]]:
+) -> dict[str, Any]:
     """Move exact selected identity to the front of role preferred list."""
     if not isinstance(selections, Mapping):
         raise ConfigurationError("selections must be a mapping")
@@ -189,8 +294,14 @@ def apply_role_selections(
                 f"model for role {role!r} must be a non-empty string"
             )
 
-    updated: dict[str, dict[str, list[str]]] = {}
+    updated: dict[str, Any] = {}
     for role, entry in configuration.items():
+        if role == "operator_policy":
+            updated[role] = {
+                operator_role: [dict(item) for item in entries]
+                for operator_role, entries in entry.items()
+            }
+            continue
         updated[role] = {field: list(items) for field, items in entry.items()}
         if role in selections:
             selected_model = selections[role]
@@ -199,6 +310,23 @@ def apply_role_selections(
                 m for m in old_preferred if m != selected_model
             ]
             updated[role]["preferred"] = new_preferred
+
+    operator_policy = updated.get("operator_policy")
+    if operator_policy is not None:
+        for advisory_role, selected_model in selections.items():
+            operator_role = ADVISORY_TO_OPERATOR_ROLE[advisory_role]
+            entries = operator_policy[operator_role]
+            selected = next(
+                (entry for entry in entries if entry["model"] == selected_model),
+                None,
+            )
+            if selected is None:
+                raise ConfigurationError(
+                    f"model {selected_model!r} is not present in canonical "
+                    f"operator_policy.{operator_role}"
+                )
+            entries.remove(selected)
+            entries.insert(0, selected)
 
     return validate_configuration(updated)
 
@@ -382,10 +510,56 @@ def configured_role_identifiers(
     return tuple(result)
 
 
+def canonical_operator_policy(
+    configuration: Mapping[str, Any],
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Return canonical ``(model, effort)`` chains in stable order."""
+    validated = validate_configuration(configuration)
+    raw = validated.get("operator_policy")
+    if raw is None:
+        return {}
+    return {
+        role: tuple((entry["model"], entry["effort"]) for entry in raw[role])
+        for role in OPERATOR_ROLES
+    }
+
+
+def translate_operator_policy(
+    configuration: Mapping[str, Any],
+    endpoint_resolution: Mapping[str, Mapping[str, object]],
+) -> dict[str, tuple[tuple[str, str, str], ...]]:
+    """Translate exact raw policy entries to unique runtime endpoints.
+
+    Matching is deliberately exact on both model and effort. Ambiguous or
+    missing runtime identities fail closed instead of guessing an alias.
+    """
+    canonical = canonical_operator_policy(configuration)
+    translated: dict[str, tuple[tuple[str, str, str], ...]] = {}
+    for role, entries in canonical.items():
+        role_result: list[tuple[str, str, str]] = []
+        for model, effort in entries:
+            matches = [
+                endpoint
+                for endpoint, metadata in endpoint_resolution.items()
+                if metadata.get("model") == model and metadata.get("effort") == effort
+            ]
+            if len(matches) != 1:
+                raise ConfigurationError(
+                    f"operator_policy.{role} identity {model!r}/{effort!r} "
+                    f"maps to {len(matches)} runtime endpoints"
+                )
+            role_result.append((matches[0], model, effort))
+        translated[role] = tuple(role_result)
+    return translated
+
+
 __all__ = [
+    "ADVISORY_TO_OPERATOR_ROLE",
     "CAPABILITIES",
     "HARD_CONSTRAINTS",
     "MutationResult",
+    "OPERATOR_POLICY_FIELDS",
+    "OPERATOR_ROLES",
     "OUTCOME_RECOMMENDED",
     "OUTCOME_REJECTED",
     "OUTCOME_UNKNOWN",
@@ -397,10 +571,12 @@ __all__ = [
     "TIE_BREAK",
     "ConfigurationError",
     "apply_role_selections",
+    "canonical_operator_policy",
     "compute_file_sha256",
     "configured_role_identifiers",
     "is_public_role",
     "load_configuration",
     "mutate_configuration_file",
+    "translate_operator_policy",
     "validate_configuration",
 ]

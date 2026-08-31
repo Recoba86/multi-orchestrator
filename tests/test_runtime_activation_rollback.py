@@ -89,6 +89,10 @@ class RuntimeEndpointCatalogTests(unittest.TestCase):
             raw = yaml.safe_load(f)
         # SOL_HIGH in Core is gpt-5.6-sol; attempt to conflict in catalog with different model
         raw["endpoint_resolution"]["SOL_HIGH"]["model"] = "conflicting-model-string"
+        for role in ("BOSS", "DEEP_WORKER", "VERIFIER"):
+            for entry in raw["operator_policy"][role]:
+                if entry["endpoint"] == "SOL_HIGH":
+                    entry["model"] = "conflicting-model-string"
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
             yaml.safe_dump(raw, tf)
             tf_path = Path(tf.name)
@@ -134,12 +138,16 @@ class RuntimeEndpointCatalogTests(unittest.TestCase):
         }
         raw["failure_domains"]["custom_pool"] = ["CUSTOM_FAST_MODEL"]
         raw["independence_groups"]["custom_pool"] = ["CUSTOM_FAST_MODEL"]
-        raw["role_weights"]["SCOUT"]["SolMode"]["base"].append({
+        raw["operator_policy"]["SCOUT"].append({
             "endpoint": "CUSTOM_FAST_MODEL",
-            "weight": 10.0,
+            "model": "custom/fast-model-v1",
+            "effort": "high",
         })
-        raw["role_weights"]["SCOUT"]["SolMode"]["base"][0]["weight"] = 90.0
-        raw["role_weights"]["SCOUT"]["SolMode"]["base"][1]["weight"] = 0.0
+        for mode in ("SolMode", "GrokMode"):
+            raw["role_weights"]["SCOUT"][mode]["base"].append({
+                "endpoint": "CUSTOM_FAST_MODEL",
+                "weight": 0.0,
+            })
 
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tf:
             yaml.safe_dump(raw, tf)
@@ -325,7 +333,7 @@ class OrchestratorRoutingCliTests(unittest.TestCase):
         self.assertEqual(json.loads(res_grok_off.stdout)["selected_endpoint"], "GROK_4_6_HIGH")
         self.assertEqual(json.loads(res_grok_off.stdout)["routing_authority"], "LEGACY_WRAPPER_AUTHORITY")
 
-        # 2. Switch ON: Runtime mode-aware routing is used
+        # 2. Switch ON: Runtime routing uses the canonical policy
         set_routing_enabled(True, path=self.switch_path)
         write_mode(GROK_MODE, state_path=self.state_path)
         res_on = subprocess.run(
@@ -338,8 +346,8 @@ class OrchestratorRoutingCliTests(unittest.TestCase):
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         self.assertEqual(res_on.returncode, 0, res_on.stderr)
-        # In GrokMode with runtime routing ON, Boss is GROK_4_6_HIGH even if sol wrapper was queried
-        self.assertEqual(json.loads(res_on.stdout)["selected_endpoint"], "GROK_4_6_HIGH")
+        # GrokMode remains observable, but does not replace the canonical Boss primary.
+        self.assertEqual(json.loads(res_on.stdout)["selected_endpoint"], "SOL_HIGH")
 
 
 if __name__ == "__main__":

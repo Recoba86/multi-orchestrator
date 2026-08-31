@@ -42,7 +42,7 @@ _SETTERS: dict[str, RoutingMode] = {
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="orchestrator_mode.py",
-        description="View or manually set persistent SolMode/GrokMode state.",
+        description="View or manually set persistent SolMode/GrokMode state; mode does not override the canonical Auto Team policy.",
     )
     parser.add_argument(
         "--state-path",
@@ -55,11 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="print current resolved mode (read-only)")
     sub.add_parser(
         "SolMode",
-        help="persist SolMode (GPT Plus / Sol / Luna fully eligible)",
+        help="persist SolMode (compatibility and observability state)",
     )
     sub.add_parser(
         "GrokMode",
-        help="persist GrokMode (entire gpt_plus failure domain excluded)",
+        help="persist GrokMode (compatibility and observability state; no implicit model exclusion)",
     )
     return parser
 

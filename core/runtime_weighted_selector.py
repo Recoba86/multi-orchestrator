@@ -1,7 +1,7 @@
-"""Pure deterministic weighted selector for SolMode/GrokMode routing (Task 3 / 3R integer-exact).
+"""Deterministic primary-first selector for canonical Auto Team routing.
 
-Normative reference:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§6)
+The runtime tables retain weight-shaped audit data for compatibility with the
+historical routing release, but a healthy earlier candidate always wins.
 """
 
 from __future__ import annotations

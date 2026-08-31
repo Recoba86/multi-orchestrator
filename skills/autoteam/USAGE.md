@@ -26,8 +26,8 @@ Use autoteam to plan and implement <feature or bugfix>.
 ## 2. Model Roles & Routing Modes
 
 Auto Team operates in two persistent operator-selected routing modes:
-- **SolMode (Default):** Sol High (`gpt-5.6-sol`) is primary Boss; Grok High, Opus, and Gemini Flash provide multi-tier worker/verifier capacity.
-- **GrokMode:** Grok 4.6 High (`nine-router/gcli/grok-4.6-high`) is primary Boss with zero GPT Plus throughput.
+- **SolMode (Default):** The persisted operator state is `SolMode`; the canonical Boss chain still begins with Sol High (`gpt-5.6-sol`) and fails over in declared order.
+- **GrokMode:** The persisted operator state is `GrokMode`; it does not replace the canonical Auto Team model chains or imply GPT Plus exclusion.
 
 ### Management Commands:
 ```bash

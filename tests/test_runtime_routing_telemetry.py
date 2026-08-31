@@ -293,7 +293,7 @@ class ShadowControllerCliTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].endpoint_id, "GEMINI_FLASH_MEDIUM")
 
-    def test_cli_select_boss_grokmode(self):
+    def test_cli_select_boss_grokmode_uses_canonical_primary(self):
         # Set mode to GrokMode
         write_mode(GROK_MODE, state_path=self.state_path)
         res = self._run_cli("select", "--role", "BOSS", "--mission-id", "m1", "--ordinal", "0")
@@ -301,12 +301,12 @@ class ShadowControllerCliTests(unittest.TestCase):
         data = json.loads(res.stdout)
         self.assertEqual(data["role"], "BOSS")
         self.assertEqual(data["mode"], "GrokMode")
-        self.assertEqual(data["selected_endpoint"], "GROK_4_6_HIGH")
+        self.assertEqual(data["selected_endpoint"], "SOL_HIGH")
         events, _ = read_telemetry_events(self.telemetry_path)
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0].endpoint_id, "GROK_4_6_HIGH")
-        self.assertEqual(events[0].endpoint_independence_group, "supergrok")
-        self.assertEqual(events[0].capacity_domain, "supergrok")
+        self.assertEqual(events[0].endpoint_id, "SOL_HIGH")
+        self.assertEqual(events[0].endpoint_independence_group, "sol_family")
+        self.assertEqual(events[0].capacity_domain, "gpt_plus")
 
     def test_cli_select_reviewer_solmode_with_sol_implementer(self):
         res = self._run_cli(

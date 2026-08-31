@@ -18,12 +18,14 @@ __all__ = [
     "CandidateWeight",
     "ConcurrencyConfig",
     "FailureDomain",
+    "OperatorCandidate",
     "RuntimePolicy",
     "PolicyValidationError",
     "load_runtime_policy",
     "group_of",
     "weights_for",
     "boss_chain_for",
+    "operator_chain_for",
 ]
 
 
@@ -36,6 +38,15 @@ class PolicyValidationError(ValueError):
 class CandidateWeight:
     endpoint_id: str
     weight: float
+
+
+@dataclass(frozen=True)
+class OperatorCandidate:
+    """One canonical operator-selected endpoint/model/effort entry."""
+
+    endpoint_id: str
+    model: str
+    effort: str
 
 
 @dataclass(frozen=True)
@@ -56,6 +67,7 @@ class ConcurrencyConfig:
 class RuntimePolicy:
     domains: dict[str, FailureDomain]
     independence_groups: dict[str, tuple[str, ...]]
+    operator_policy: dict[str, tuple[OperatorCandidate, ...]]
     boss_chains: dict[RoutingMode, tuple[str, ...]]
     role_weights: dict[tuple[str, RoutingMode, bool], tuple[CandidateWeight, ...]]
     reviewer_tables: dict[tuple[str, RoutingMode], tuple[CandidateWeight, ...]]
@@ -70,6 +82,7 @@ _KNOWN_TOP_LEVEL_KEYS = {
     "concurrency",
     "failure_domains",
     "independence_groups",
+    "operator_policy",
     "global_targets",
     "ox_overlay",
     "endpoint_resolution",
@@ -132,6 +145,17 @@ def boss_chain_for(policy: RuntimePolicy, mode: RoutingMode) -> tuple[str, ...]:
     raise AssertionError("unreachable")
 
 
+def operator_chain_for(
+    policy: RuntimePolicy, role: str
+) -> tuple[OperatorCandidate, ...]:
+    """Return the canonical endpoint/model/effort chain for one Auto Team role."""
+    try:
+        return policy.operator_policy[role]
+    except KeyError as exc:
+        _fail(f"no operator policy chain defined for role {role!r}")
+        raise AssertionError("unreachable") from exc
+
+
 def load_runtime_policy(path: Path) -> RuntimePolicy:
     """Load and statically validate runtime-routing policy from YAML."""
     if not path.exists():
@@ -185,6 +209,81 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
             _fail("PLUS_LUNA_XHIGH must remain unverified until upstream gate passes")
         parsed_endpoints[ep_id] = ep_data
 
+    # Canonical operator policy.  This is the only runtime role policy source;
+    # the legacy mode-indexed tables below are validated deterministic views.
+    raw_operator = raw["operator_policy"]
+    operator_roles = (
+        "BOSS",
+        "SCOUT",
+        "STANDARD_WORKER",
+        "DEEP_WORKER",
+        "VERIFIER",
+        "PREMIUM_SECOND_OPINION",
+    )
+    if not isinstance(raw_operator, dict):
+        _fail("operator_policy must be a mapping")
+    unknown_operator_roles = set(raw_operator) - set(operator_roles)
+    if unknown_operator_roles:
+        _fail(
+            "operator_policy contains unknown role(s): "
+            + ", ".join(sorted(unknown_operator_roles))
+        )
+    missing_operator_roles = set(operator_roles) - set(raw_operator)
+    if missing_operator_roles:
+        _fail(
+            "operator_policy missing required role(s): "
+            + ", ".join(sorted(missing_operator_roles))
+        )
+
+    parsed_operator: dict[str, tuple[OperatorCandidate, ...]] = {}
+    for role_name in operator_roles:
+        entries = raw_operator[role_name]
+        if not isinstance(entries, list) or not entries:
+            _fail(f"operator_policy.{role_name} must be a non-empty list")
+        parsed_entries: list[OperatorCandidate] = []
+        seen_operator_endpoints: set[str] = set()
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                _fail(f"operator_policy.{role_name}[{index}] must be a mapping")
+            if set(entry) != {"endpoint", "model", "effort"}:
+                _fail(
+                    f"operator_policy.{role_name}[{index}] must contain exactly "
+                    "endpoint, model, effort"
+                )
+            endpoint = entry["endpoint"]
+            model = entry["model"]
+            effort = entry["effort"]
+            if not isinstance(endpoint, str) or not endpoint:
+                _fail(f"operator_policy.{role_name}[{index}] has invalid endpoint")
+            if endpoint not in parsed_endpoints:
+                _fail(
+                    f"operator_policy.{role_name}[{index}] references unknown endpoint "
+                    f"{endpoint}"
+                )
+            if not isinstance(model, str) or not model:
+                _fail(f"operator_policy.{role_name}[{index}] has invalid model")
+            if not isinstance(effort, str) or not effort:
+                _fail(f"operator_policy.{role_name}[{index}] has invalid effort")
+            if endpoint in seen_operator_endpoints:
+                _fail(
+                    f"operator_policy.{role_name} contains duplicate endpoint {endpoint}"
+                )
+            if parsed_endpoints[endpoint].get("model") != model:
+                _fail(
+                    f"operator_policy.{role_name}/{endpoint} model does not match "
+                    "endpoint_resolution"
+                )
+            if parsed_endpoints[endpoint].get("effort") != effort:
+                _fail(
+                    f"operator_policy.{role_name}/{endpoint} effort does not match "
+                    "endpoint_resolution"
+                )
+            seen_operator_endpoints.add(endpoint)
+            parsed_entries.append(
+                OperatorCandidate(endpoint_id=endpoint, model=model, effort=effort)
+            )
+        parsed_operator[role_name] = tuple(parsed_entries)
+
     # Failure domains
     raw_domains = raw["failure_domains"]
     if not isinstance(raw_domains, dict) or not raw_domains:
@@ -199,7 +298,6 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
             if ep not in parsed_endpoints:
                 _fail(f"failure domain {dom_name} references unknown endpoint {ep}")
         parsed_domains[dom_name] = FailureDomain(name=dom_name, endpoint_ids=tuple(ep_list))
-
     # Independence groups
     raw_groups = raw["independence_groups"]
     if not isinstance(raw_groups, dict) or not raw_groups:
@@ -260,18 +358,25 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
         for ep in chain:
             if ep not in parsed_endpoints:
                 _fail(f"boss chain for {mode_key} references unknown endpoint {ep}")
-            if mode_enum == GROK_MODE:
-                if ep in parsed_domains.get("gpt_plus", FailureDomain("", ())).endpoint_ids:
-                    _fail(f"GrokMode boss chain includes prohibited gpt_plus endpoint {ep}")
         parsed_boss[mode_enum] = tuple(chain)
 
-    # Role weights
+    canonical_boss = tuple(
+        entry.endpoint_id for entry in parsed_operator["BOSS"]
+    )
+    for mode_enum in (SOL_MODE, GROK_MODE):
+        if parsed_boss.get(mode_enum) != canonical_boss:
+            _fail(
+                f"boss chain for {mode_enum.value} must exactly translate "
+                "operator_policy.BOSS"
+            )
+
+    # Role weights are deterministic compatibility views of the canonical
+    # role chains. A 100/0/... table preserves declared priority while the
+    # selector records the digest for audit only.
     raw_roles = raw["role_weights"]
     if not isinstance(raw_roles, dict):
         _fail("role_weights must be a mapping")
     parsed_role_weights: dict[tuple[str, RoutingMode, bool], tuple[CandidateWeight, ...]] = {}
-
-    gpt_plus_endpoints = set(parsed_domains.get("gpt_plus", FailureDomain("", ())).endpoint_ids)
 
     for role_name, modes_data in raw_roles.items():
         if not isinstance(modes_data, dict):
@@ -310,16 +415,14 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
                     )
                     total_w += w
 
-                    # Static role prohibitions
+                    # Scout remains read-only and standard workers never use
+                    # the Boss Sol endpoint. Deep workers may use Sol per the
+                    # operator-selected policy.
                     if role_name == "SCOUT":
                         if ep == "SOL_HIGH" or ep in parsed_groups.get("supergrok", ()) or ep in parsed_groups.get("opus", ()):
                             _fail(f"SCOUT table includes prohibited endpoint {ep}")
-                    if role_name in ("STANDARD_WORKER", "DEEP_WORKER"):
-                        if ep == "SOL_HIGH":
-                            _fail(f"{role_name} includes prohibited endpoint SOL_HIGH")
-                    if mode_enum == GROK_MODE:
-                        if ep in gpt_plus_endpoints:
-                            _fail(f"GrokMode {role_name} table includes prohibited gpt_plus endpoint {ep}")
+                    if role_name == "STANDARD_WORKER" and ep == "SOL_HIGH":
+                        _fail(f"{role_name} includes prohibited endpoint SOL_HIGH")
 
                     cands.append(CandidateWeight(endpoint_id=ep, weight=w))
 
@@ -328,12 +431,38 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
 
                 parsed_role_weights[(role_name, mode_enum, is_overlay)] = tuple(cands)
 
-    # Reviewer tables
+    canonical_worker_roles = ("SCOUT", "STANDARD_WORKER", "DEEP_WORKER")
+    for role_name in canonical_worker_roles:
+        expected = tuple(
+            entry.endpoint_id for entry in parsed_operator[role_name]
+        )
+        expected_view = tuple(
+            CandidateWeight(endpoint_id=endpoint, weight=100.0 if index == 0 else 0.0)
+            for index, endpoint in enumerate(expected)
+        )
+        for mode_enum in (SOL_MODE, GROK_MODE):
+            actual = parsed_role_weights.get((role_name, mode_enum, False))
+            if actual != expected_view:
+                _fail(
+                    f"{role_name}/{mode_enum.value}/base must exactly translate "
+                    f"operator_policy.{role_name}"
+                )
+
+    # Reviewer tables are the common candidate construction. Implementer
+    # family exclusion is applied by runtime_reviewer_selector, not encoded
+    # by changing the canonical chain per mode or family.
     raw_reviewer = raw["reviewer_tables"]
     if not isinstance(raw_reviewer, dict):
         _fail("reviewer_tables must be a mapping")
     parsed_reviewer: dict[tuple[str, RoutingMode], tuple[CandidateWeight, ...]] = {}
 
+    canonical_verifier = tuple(
+        entry.endpoint_id for entry in parsed_operator["VERIFIER"]
+    )
+    canonical_verifier_view = tuple(
+        CandidateWeight(endpoint_id=endpoint, weight=100.0 if index == 0 else 0.0)
+        for index, endpoint in enumerate(canonical_verifier)
+    )
     for grp_key, modes_dict in raw_reviewer.items():
         if grp_key not in parsed_groups:
             _fail(f"reviewer_tables keyed by unknown independence group {grp_key}")
@@ -364,20 +493,17 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
                     c_entry.get("weight"), f"reviewer_tables[{grp_key}][{mode_key}][{ep}]"
                 )
                 rev_total += w
-
-                # Implementer group cannot review itself
-                if ep in parsed_groups.get(grp_key, ()):
-                    _fail(f"{grp_key} implementer cannot be reviewed by same-group candidate {ep}")
-
-                if mode_enum == GROK_MODE and ep in gpt_plus_endpoints:
-                    _fail(f"GrokMode reviewer table includes prohibited gpt_plus endpoint {ep}")
-
                 cands.append(CandidateWeight(endpoint_id=ep, weight=w))
 
             if not math.isclose(rev_total, 100.0, abs_tol=1e-9):
                 _fail(f"reviewer table {grp_key}/{mode_key} weight sum ({rev_total}) != 100.0")
 
             parsed_reviewer[(grp_key, mode_enum)] = tuple(cands)
+            if parsed_reviewer[(grp_key, mode_enum)] != canonical_verifier_view:
+                _fail(
+                    f"reviewer table {grp_key}/{mode_key} must exactly translate "
+                    "operator_policy.VERIFIER"
+                )
 
     raw_concurrency = raw.get("concurrency", {})
     if raw_concurrency is None:
@@ -400,6 +526,7 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
     return RuntimePolicy(
         domains=parsed_domains,
         independence_groups=parsed_groups,
+        operator_policy=parsed_operator,
         boss_chains=parsed_boss,
         role_weights=parsed_role_weights,
         reviewer_tables=parsed_reviewer,

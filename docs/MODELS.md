@@ -2,13 +2,14 @@
 
 The registry defines request-contract constraints. The Controller validates requested endpoint, model, effort, role, and access before Host submission; native Host dispatch, allocation, and final effective identity remain `HOST_EXTERNAL`.
 
-## Declarative logical-role configuration
+## Declarative operator policy and logical-role views
 
 [`config/models.yaml`](../config/models.yaml) provides a separate,
-provider-agnostic contract for the logical roles `planner`, `scout`, `worker`,
-and `reviewer`. Its `preferred` and `fallback` values are ordered,
-user-editable model-identifier examples or optional recommendations. They are
-not universal requirements.
+provider-agnostic operator policy. Its `operator_policy` section is the
+canonical ordered model/effort chain for `BOSS`, `SCOUT`, `STANDARD_WORKER`,
+`DEEP_WORKER`, `VERIFIER`, and `PREMIUM_SECOND_OPINION`. The four logical roles
+(`planner`, `scout`, `worker`, and `reviewer`) are advisory views whose
+`preferred` plus `fallback` lists project the corresponding canonical chains.
 
 The current flow is user-owned `models.yaml` → read-only Doctor structural
 validation → local Codex declaration discovery and exact-string comparison.
@@ -23,10 +24,9 @@ configuration automatically, or overrides normative Core routing. The schema
 and strict unknown-field behavior are covered by
 [`tests/test_model_configuration.py`](../tests/test_model_configuration.py).
 
-The concrete endpoint and role chains below remain the current RC3
-compatibility profile and request-contract examples. Provider/model strings are
-not claims of universal availability or runtime allocation, and they are not
-silently replaced by the declarative file.
+The endpoint chains below are the deterministic runtime translation of that
+operator policy. Provider/model strings are not claims of universal
+availability or runtime allocation.
 
 ## Model intelligence foundation (offline and advisory)
 
@@ -87,23 +87,28 @@ configuration mutation rules, and security gates.
 
 | Endpoint ID | Canonical Model String | Capacity Domain | Accepted Efforts | Policy Max / Binding |
 |---|---|---|---|---|
-| `SOL_HIGH` | `gpt-5.6-sol` | `openai_plus_capacity` | `[low, medium, high, xhigh, max, ultra]` | normative boss binding; no additional cap documented |
-| `GROK_4_6_HIGH` | `nine-router/gcli/grok-4.6-high` | `xai_gcli_capacity` | `[high, max]` | normative boss binding; no additional cap documented |
-| `PLUS_LUNA` | `gpt-5.6-luna` | `openai_plus_capacity` | `[low, medium, high, max]` | `max` |
-| `GEMINI_FLASH_HIGH` | `nine-router/ag/gemini-3.7-flash-high` | `google_ag_capacity` | `[low, high, max]` | `high` |
-| `DEEPSEEK_FLASH` | `opencode-go/deepseek-v4-flash` | `opencode_go_capacity` | `[low, high, max]` | `high` |
-| `DEEPSEEK_PRO` | `opencode-go/deepseek-v4-pro` | `opencode_go_capacity` | `[high, max]` | `max` |
-| `OCG_LUNA` | `opencode-go-responses/gpt-5.6-luna` | `opencode_go_capacity` | `[high, max]` | `high` |
-| `OPUS_4_6_THINKING` | `nine-router/ag/claude-opus-4-6-thinking` | `claude_opus_ag_capacity` | `[low, high, max]` | `high` (request contract: read-only) |
+| `SOL_HIGH` | `gpt-5.6-sol` | `gpt_plus` | `[high]` | BOSS / DEEP_WORKER / VERIFIER |
+| `GROK_4_6_HIGH` | `nine-router/gcli/grok-4.6-high` | `supergrok` | `[high]` | BOSS / DEEP_WORKER / VERIFIER |
+| `GROK_CURSOR_HIGH` | `nine-router/cu/cursor-grok-4.6-high` | `supergrok` | `[high]` | BOSS fallback |
+| `GEMINI_FLASH_MEDIUM` | `nine-router/ag/gemini-3.7-flash-medium` | `gemini` | `[medium]` | SCOUT |
+| `GEMINI_FLASH_HIGH` | `nine-router/ag/gemini-3.7-flash-high` | `gemini` | `[high]` | STANDARD_WORKER / DEEP_WORKER / VERIFIER |
+| `QWEN_3_8_FLASH` | `commandcode/qwen3.8-flash` | `cheap` | `[high]` | SCOUT fallback |
+| `PLUS_LUNA` | `gpt-5.6-luna` | `gpt_plus` | `[max]` | STANDARD_WORKER fallback |
+| `OPUS_COMBO` | `nine-router/Opus` | `opus` | `[high]` | VERIFIER / PREMIUM_SECOND_OPINION; read-only |
+| `PLUS_TERRA` | `gpt-5.6-terra` | `gpt_plus` | `[high]` | PREMIUM_SECOND_OPINION fallback |
 
-`SOL_HIGH` and `GROK_4_6_HIGH` are normative Dedicated Boss bindings at
-`high` effort; their accepted-effort lists do not document an additional policy
-cap. `OCG_LUNA` retains its `high` verifier cap.
+Legacy catalog entries remain available only for rollback and validation
+fixtures. Their presence does not add candidates to the canonical chains.
 
-## Role Chains
+## Canonical Auto Team Role Chains
 
-- **SCOUT:** `GEMINI_FLASH_HIGH` (high) → `DEEPSEEK_FLASH` (high) → `PLUS_LUNA` (medium)
-- **STANDARD_WORKER:** `GEMINI_FLASH_HIGH` (high) → `PLUS_LUNA` (max) → `DEEPSEEK_FLASH` (high)
-- **DEEP_WORKER:** `DEEPSEEK_PRO` (max) → `PLUS_LUNA` (max) → `GEMINI_FLASH_HIGH` (max)
-- **VERIFIER:** Controller request selection enforces `verifier != implementer` and model family independence (`PLUS_LUNA` ↔ `OCG_LUNA` conflict).
-- **PREMIUM_SECOND_OPINION:** `OPUS_4_6_THINKING` (request contract: read-only).
+- **BOSS / Planner:** `SOL_HIGH` (`gpt-5.6-sol`, high) → `GROK_4_6_HIGH` (`nine-router/gcli/grok-4.6-high`, high) → `GROK_CURSOR_HIGH` (`nine-router/cu/cursor-grok-4.6-high`, high)
+- **SCOUT:** `GEMINI_FLASH_MEDIUM` (`nine-router/ag/gemini-3.7-flash-medium`, medium) → `QWEN_3_8_FLASH` (`commandcode/qwen3.8-flash`, high)
+- **STANDARD_WORKER:** `GEMINI_FLASH_HIGH` (`nine-router/ag/gemini-3.7-flash-high`, high) → `PLUS_LUNA` (`gpt-5.6-luna`, max)
+- **DEEP_WORKER:** `GROK_4_6_HIGH` (high) → `GEMINI_FLASH_HIGH` (high) → `SOL_HIGH` (high)
+- **VERIFIER:** `SOL_HIGH` (high) → `GROK_4_6_HIGH` (high) → `OPUS_COMBO` (`nine-router/Opus`, high) → `GEMINI_FLASH_HIGH` (high), after implementer-family exclusion
+- **PREMIUM_SECOND_OPINION:** `OPUS_COMBO` (high) → `PLUS_TERRA` (`gpt-5.6-terra`, high), read-only
+
+SolMode and GrokMode are persistent operator state for compatibility, status,
+and telemetry. Both modes use these same canonical chains; mode does not
+silently exclude GPT Plus candidates or create alternate model policy.

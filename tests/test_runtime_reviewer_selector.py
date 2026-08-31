@@ -38,6 +38,30 @@ class ReviewerIndependenceSelectorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             select_reviewer(self.policy, "UNKNOWN_IMPLEMENTER", self._key(), validator=self.validator)
 
+    def test_sol_implementer_excludes_all_sol_family_candidates(self):
+        dec = select_reviewer(
+            self.policy,
+            "SOL_HIGH",
+            self._key(),
+            validator=self.validator,
+        )
+        self.assertEqual(dec.implementer_independence_group, "sol_family")
+        self.assertNotIn("SOL_HIGH", dec.effective_candidates)
+        for endpoint in dec.effective_candidates:
+            self.assertNotEqual(group_of(self.policy, endpoint), "sol_family")
+
+    def test_luna_implementer_excludes_luna_family_bidirectionally(self):
+        dec = select_reviewer(
+            self.policy,
+            "PLUS_LUNA",
+            self._key(),
+            validator=self.validator,
+        )
+        self.assertEqual(dec.implementer_independence_group, "luna_family")
+        self.assertNotIn("PLUS_LUNA", dec.effective_candidates)
+        for endpoint in dec.effective_candidates:
+            self.assertNotEqual(group_of(self.policy, endpoint), "luna_family")
+
     def test_gemini_implementer_selects_sol_primary(self):
         d0 = select_reviewer(self.policy, "GEMINI_FLASH_HIGH", self._key(0), validator=self.validator)
         d1 = select_reviewer(self.policy, "GEMINI_FLASH_HIGH", self._key(1), validator=self.validator)
@@ -67,10 +91,9 @@ class ReviewerIndependenceSelectorTests(unittest.TestCase):
         dec = select_reviewer(self.policy, "GROK_4_6_HIGH", self._key(), validator=self.validator)
         self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
 
-    def test_grok_implementer_grokmode_skips_sol(self):
+    def test_grok_implementer_grokmode_does_not_skip_sol(self):
         dec = select_reviewer(self.policy, "GROK_4_6_HIGH", self._key(mode=GROK_MODE), validator=self.validator)
-        self.assertEqual(dec.selected_endpoint, "OPUS_COMBO")
-        self.assertNotEqual(dec.selected_endpoint, "SOL_HIGH")
+        self.assertEqual(dec.selected_endpoint, "SOL_HIGH")
 
     def test_domain_eligible_health_filtering(self):
         def domain_eligible(dom):
@@ -93,6 +116,13 @@ class ReviewerIndependenceSelectorTests(unittest.TestCase):
                 excluded_endpoints={"GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"},
                 validator=self.validator,
             )
+
+    def test_deterministic_and_core_valid(self):
+        key = self._key(ordinal=42)
+        first = select_reviewer(self.policy, "SOL_HIGH", key, validator=self.validator)
+        second = select_reviewer(self.policy, "SOL_HIGH", key, validator=self.validator)
+        self.assertEqual(first, second)
+        self.assertEqual(first.core_validation_status, "REQUEST_VALID")
 
 
 if __name__ == "__main__":

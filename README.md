@@ -13,21 +13,18 @@ Multi Orchestrator coordinates specialized AI model subagents across complex sof
 - **Implementer-Aware Independent Verification:** The agent that implements code cannot verify it (`verifier != implementer`). If verifiers are exhausted, tasks remain unverified rather than self-approved.
 - **Fail-Closed Mutation Safety:** Ambiguous write state makes the Controller refuse further write-capable requests.
 - **Dedicated Read-Only Premium Review:** High-stakes review requests assign Claude Opus 4.6 Thinking a read-only, non-mutating contract.
-- **Deterministic Role-Specific Fallback:** Three-entry request-routing chains are defined for Scout, Standard Worker, and Deep Worker; verifier, premium-review, and Dedicated Boss bindings follow separate policies.
+- **Deterministic Canonical Role Policy:** Ordered chains are defined for BOSS/Planner, Scout, Standard Worker, Deep Worker, Verifier, and Premium Second Opinion; healthy primaries are replicated and fallbacks are used only when needed.
 
 These are repository protocol guarantees. Native child allocation, effective identity, and Host-wide admission are `HOST_EXTERNAL`; this repository does not intercept or authorize them. See the authoritative [Execution Boundary Model](core/ORCHESTRATOR_CORE.md#execution-boundary-model-host_external--authoritative).
 
-The repository also includes a provider-agnostic, declarative role contract at
-[`config/models.yaml`](config/models.yaml) for `planner`, `scout`, `worker`, and
-`reviewer`. Its ordered `preferred` and `fallback` entries are user-editable
-examples or optional recommendations, not universal requirements. Read-only
-Doctor (`doctor`) validates configuration, discovers local declarations, and
-runs the deterministic offline advisory resolver (`core/model_policy.py`,
-`core/model_resolver.py`). Model preferences can be safely and explicitly
-applied via `configure-models` (`--apply --approve --expected-sha256`).
-These tools do not probe remote providers or perform native Host allocation,
-spawn, or routing overrides (`HOST_EXTERNAL`). See the [configuration
-contract](docs/MODEL_CONFIGURATION.md).
+The repository also includes a provider-agnostic, declarative operator policy
+at [`config/models.yaml`](config/models.yaml). Its canonical `operator_policy`
+lists the exact model/effort chains; the `planner`, `scout`, `worker`, and
+`reviewer` sections are advisory projections for Doctor and the offline
+resolver. `config/runtime-routing.yaml` translates the same policy to endpoint
+IDs and rejects drift between the two planes. These tools do not probe remote
+providers or perform native Host allocation, spawn, or routing overrides
+(`HOST_EXTERNAL`). See the [configuration contract](docs/MODEL_CONFIGURATION.md).
 
 ---
 
@@ -45,8 +42,8 @@ the Decision Plane, while the Root Controller remains in the Control Plane.
  (Session Model / Control Plane)
              │
              ▼ (submits Host requests & relays)
-      DEDICATED_BOSS
-  (Skill-Bound: Sol High / Grok High)
+  DEDICATED_BOSS
+  (Skill-Bound: canonical BOSS chain)
              │ (decisions / actions)
              ▼
        ROOT_CONTROLLER
@@ -55,7 +52,7 @@ the Decision Plane, while the Root Controller remains in the Control Plane.
    ▼         ▼         ▼                      ▼                       ▼
  Scout    Standard    Deep     Implementer-Aware   Premium        Dedicated Boss
 (Read)     Worker    Worker         Verifier       Reviewer        (Decision Plane)
-(gemini)  (gemini)   (dseek)     (!implementer)    (Opus)         (Sol / Grok)
+(Gemini)  (Gemini)  (Grok)       (!implementer)    (Opus)       (same canonical chain)
    │         │         │              │               │               ▲
    └─────────┼─────────┴──────────────┴───────────────┴───────────────┘
              │ (Structured Factual Execution Results)

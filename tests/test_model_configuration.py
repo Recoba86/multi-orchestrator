@@ -24,13 +24,14 @@ def load_model_configuration() -> dict:
 
 
 def validate_model_configuration(value: object) -> dict:
-    """Validate the small public schema used by this phase's config file."""
+    """Validate advisory views plus the canonical operator policy."""
     if not isinstance(value, dict):
         raise ValueError("configuration root must be a mapping")
 
     keys = set(value)
     expected_roles = set(ROLES)
-    unknown_roles = keys - expected_roles
+    allowed_keys = expected_roles | {"operator_policy"}
+    unknown_roles = keys - allowed_keys
     if unknown_roles:
         raise ValueError(f"unknown top-level keys or roles: {sorted(unknown_roles)}")
     missing_roles = expected_roles - keys
@@ -54,6 +55,23 @@ def validate_model_configuration(value: object) -> dict:
                 raise ValueError(f"{role}.{field} must be a non-empty list")
             if any(not isinstance(item, str) or not item.strip() for item in items):
                 raise ValueError(f"{role}.{field} must contain non-empty strings")
+
+    operator_policy = value.get("operator_policy")
+    if operator_policy is None:
+        raise ValueError("missing operator_policy")
+    if set(operator_policy) != {
+        "BOSS", "SCOUT", "STANDARD_WORKER", "DEEP_WORKER", "VERIFIER",
+        "PREMIUM_SECOND_OPINION",
+    }:
+        raise ValueError("operator_policy roles are not exact")
+    for role, entries in operator_policy.items():
+        if not isinstance(entries, list) or not entries:
+            raise ValueError(f"operator_policy.{role} must be a non-empty list")
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"model", "effort"}:
+                raise ValueError(f"operator_policy.{role} entries must contain model and effort")
+            if any(not isinstance(entry[field], str) or not entry[field].strip() for field in ("model", "effort")):
+                raise ValueError(f"operator_policy.{role} entries must contain non-empty strings")
     return value
 
 
@@ -61,7 +79,7 @@ class ModelConfigurationTests(unittest.TestCase):
     def test_valid_configuration_has_exact_roles_and_fields(self):
         configuration = validate_model_configuration(load_model_configuration())
 
-        self.assertEqual(set(configuration), set(ROLES))
+        self.assertEqual(set(configuration), set(ROLES) | {"operator_policy"})
         for role in ROLES:
             self.assertEqual(set(configuration[role]), set(ROLE_FIELDS))
 
@@ -95,21 +113,19 @@ class ModelConfigurationTests(unittest.TestCase):
         configuration = validate_model_configuration(load_model_configuration())
         expected_preferred = {
             "planner": ["gpt-5.6-sol", "nine-router/gcli/grok-4.6-high"],
-            "scout": ["nine-router/ag/gemini-3.7-flash-high"],
+            "scout": ["nine-router/ag/gemini-3.7-flash-medium"],
             "worker": ["nine-router/ag/gemini-3.7-flash-high"],
             "reviewer": [
-                "opencode-go-responses/gpt-5.6-luna",
-                "nine-router/ag/claude-opus-4-6-thinking",
+                "gpt-5.6-sol",
+                "nine-router/gcli/grok-4.6-high",
+                "nine-router/Opus",
             ],
         }
         expected_fallbacks = {
-            "planner": ["gpt-5.6-luna", "opencode-go/deepseek-v4-pro"],
-            "scout": ["opencode-go/deepseek-v4-flash", "gpt-5.6-luna"],
-            "worker": ["gpt-5.6-luna", "opencode-go/deepseek-v4-flash"],
-            "reviewer": [
-                "opencode-go/deepseek-v4-pro",
-                "nine-router/ag/gemini-3.7-flash-high",
-            ],
+            "planner": ["nine-router/cu/cursor-grok-4.6-high"],
+            "scout": ["commandcode/qwen3.8-flash"],
+            "worker": ["gpt-5.6-luna"],
+            "reviewer": ["nine-router/ag/gemini-3.7-flash-high"],
         }
 
         for role in ROLES:
@@ -117,6 +133,19 @@ class ModelConfigurationTests(unittest.TestCase):
                 self.assertEqual(configuration[role]["preferred"], expected_preferred[role])
                 fallback = configuration[role]["fallback"]
                 self.assertEqual(fallback, expected_fallbacks[role])
+                operator_role = {
+                    "planner": "BOSS",
+                    "scout": "SCOUT",
+                    "worker": "STANDARD_WORKER",
+                    "reviewer": "VERIFIER",
+                }[role]
+                self.assertEqual(
+                    [
+                        item["model"]
+                        for item in configuration["operator_policy"][operator_role]
+                    ],
+                    configuration[role]["preferred"] + configuration[role]["fallback"],
+                )
                 # Validation must not sort or deduplicate user order.
                 ordered = ["first", "second"]
                 candidate = deepcopy(configuration)

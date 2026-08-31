@@ -1,7 +1,8 @@
 # Declarative Model-Role Configuration
 
-`config/models.yaml` is the authoritative, provider-agnostic configuration
-contract for four logical roles: `planner`, `scout`, `worker`, and `reviewer`.
+`config/models.yaml` is the advisory/control-plane configuration for the
+operator-selected Auto Team model policy and its four logical-role views:
+`planner`, `scout`, `worker`, and `reviewer`.
 
 It is intentionally declarative. Configuration semantics are centralized in
 `core/model_policy.py`, and evaluated deterministically by the offline advisory
@@ -13,13 +14,18 @@ explicit mutations can be performed via `configure-models` (`--apply`,
 
 The resolver is offline and advisory: it never executes network requests,
 probes remote providers, silently overrides configuration, or performs native
-Host allocation or spawn (`HOST_EXTERNAL`). Editing this file cannot change
-executable RC3 bindings in `core/ORCHESTRATOR_CORE.md`.
+Host allocation or spawn (`HOST_EXTERNAL`). The canonical `operator_policy`
+section is translated deterministically into the normative endpoint policy in
+`config/runtime-routing.yaml`; the advisory views cannot describe a different
+chain.
 
 ## Schema
 
-The YAML root contains exactly the four role names. Each role contains exactly
-these four fields, and every field is a non-empty list of non-empty strings:
+The YAML root contains `operator_policy` plus exactly the four advisory role
+names. `operator_policy` contains the six canonical Auto Team roles, each as
+an ordered non-empty list of `{model, effort}` entries. Each advisory role
+contains exactly these four fields, and every field is a non-empty list of
+non-empty strings:
 
 ```yaml
 planner:
@@ -29,14 +35,39 @@ planner:
   capability_hints: ["structured decomposition"]
 ```
 
+The canonical section has this shape:
+
+```yaml
+operator_policy:
+  BOSS:
+    - model: "example/boss"
+      effort: "high"
+  SCOUT:
+    - model: "example/scout"
+      effort: "medium"
+  STANDARD_WORKER:
+    - model: "example/worker"
+      effort: "high"
+  DEEP_WORKER:
+    - model: "example/deep-worker"
+      effort: "high"
+  VERIFIER:
+    - model: "example/verifier"
+      effort: "high"
+  PREMIUM_SECOND_OPINION:
+    - model: "example/second-opinion"
+      effort: "high"
+```
+
 - `requires` describes logical requirements for the role, such as read-only
   review or bounded write ownership.
 - `preferred` is an ordered list of optional model-identifier recommendations.
 - `fallback` is an ordered list of optional model-identifier recommendations.
 - `capability_hints` gives advisory capability labels for future selection.
 
-Unknown top-level keys, role names, or fields are invalid. The schema is tested
-by [`tests/test_model_configuration.py`](../tests/test_model_configuration.py).
+Unknown top-level keys, operator roles, advisory roles, or fields are invalid.
+The schema and the advisory-to-canonical projection are tested by
+[`tests/test_model_configuration.py`](../tests/test_model_configuration.py).
 
 ## Local Model Intelligence cache (schema v1)
 
@@ -156,10 +187,13 @@ The resolver (`core/model_resolver.py`, `resolve_role`) adheres to strict safety
 - **Explicit Approved Mutation (`configure_models.py` / `configure-models`):**
   Safe modification of role preferences is dry-run by default. Applying changes requires explicit `--apply`, `--approve`, and `--expected-sha256 <SHA>` matching the file's current bytes. The mutation creates a collision-safe byte-exact backup (`.bak.<timestamp>_<pid>`), writes atomically via a temporary file in the same directory, syncs to disk, and fails closed on any mismatch or error.
 
-## Relationship to RC3 routing
+## Relationship to runtime routing
 
-The existing endpoint registry and role chains in [`MODELS.md`](MODELS.md) are
-the current RC3 compatibility profile. They remain concrete request-contract
-examples and are not replaced by this file. Native allocation, effective model
-identity, and routing enforcement remain Host-external as described in the
+The raw model/effort chains in `operator_policy` are the single operator
+selection policy. `config/runtime-routing.yaml` adds endpoint IDs and validates
+an exact, deterministic translation of every entry; its mode-indexed tables
+are compatibility views and cannot silently diverge. SolMode and GrokMode
+remain explicit operator state for compatibility, status, and telemetry, but
+do not select alternate model chains. Native allocation, effective model
+identity, and Host enforcement remain external as described in the
 [execution boundary](../core/ORCHESTRATOR_CORE.md#execution-boundary-model-host_external--authoritative).

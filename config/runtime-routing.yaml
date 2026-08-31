@@ -143,16 +143,71 @@ endpoint_resolution:
     verified: false
     eligibility: "disabled"
 
+operator_policy:
+  BOSS:
+    - endpoint: "SOL_HIGH"
+      model: "gpt-5.6-sol"
+      effort: "high"
+    - endpoint: "GROK_4_6_HIGH"
+      model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - endpoint: "GROK_CURSOR_HIGH"
+      model: "nine-router/cu/cursor-grok-4.6-high"
+      effort: "high"
+  SCOUT:
+    - endpoint: "GEMINI_FLASH_MEDIUM"
+      model: "nine-router/ag/gemini-3.7-flash-medium"
+      effort: "medium"
+    - endpoint: "QWEN_3_8_FLASH"
+      model: "commandcode/qwen3.8-flash"
+      effort: "high"
+  STANDARD_WORKER:
+    - endpoint: "GEMINI_FLASH_HIGH"
+      model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+    - endpoint: "PLUS_LUNA"
+      model: "gpt-5.6-luna"
+      effort: "max"
+  DEEP_WORKER:
+    - endpoint: "GROK_4_6_HIGH"
+      model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - endpoint: "GEMINI_FLASH_HIGH"
+      model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+    - endpoint: "SOL_HIGH"
+      model: "gpt-5.6-sol"
+      effort: "high"
+  VERIFIER:
+    - endpoint: "SOL_HIGH"
+      model: "gpt-5.6-sol"
+      effort: "high"
+    - endpoint: "GROK_4_6_HIGH"
+      model: "nine-router/gcli/grok-4.6-high"
+      effort: "high"
+    - endpoint: "OPUS_COMBO"
+      model: "nine-router/Opus"
+      effort: "high"
+    - endpoint: "GEMINI_FLASH_HIGH"
+      model: "nine-router/ag/gemini-3.7-flash-high"
+      effort: "high"
+  PREMIUM_SECOND_OPINION:
+    - endpoint: "OPUS_COMBO"
+      model: "nine-router/Opus"
+      effort: "high"
+    - endpoint: "PLUS_TERRA"
+      model: "gpt-5.6-terra"
+      effort: "high"
+
 boss_chains:
   SolMode:
     - "SOL_HIGH"
     - "GROK_4_6_HIGH"
-    - "OPUS_COMBO"
-    - "GEMINI_FLASH_HIGH"
+    - "GROK_CURSOR_HIGH"
   GrokMode:
+    - "SOL_HIGH"
     - "GROK_4_6_HIGH"
-    - "OPUS_COMBO"
-    - "GEMINI_FLASH_HIGH"
+    - "GROK_CURSOR_HIGH"
 
 role_weights:
   SCOUT:
@@ -185,7 +240,7 @@ role_weights:
       base:
         - endpoint: "GEMINI_FLASH_HIGH"
           weight: 100.0
-        - endpoint: "QWEN_3_8_FLASH"
+        - endpoint: "PLUS_LUNA"
           weight: 0.0
       overlay:
         - endpoint: "OX_ALPHA"
@@ -200,140 +255,47 @@ role_weights:
           weight: 100.0
         - endpoint: "GEMINI_FLASH_HIGH"
           weight: 0.0
+        - endpoint: "SOL_HIGH"
+          weight: 0.0
     GrokMode:
       base:
         - endpoint: "GROK_4_6_HIGH"
           weight: 100.0
         - endpoint: "GEMINI_FLASH_HIGH"
           weight: 0.0
+        - endpoint: "SOL_HIGH"
+          weight: 0.0
 
 reviewer_tables:
   sol_family:
-    SolMode:
-      - endpoint: "GROK_4_6_HIGH"
+    SolMode: &verifier_chain
+      - endpoint: "SOL_HIGH"
         weight: 100.0
+      - endpoint: "GROK_4_6_HIGH"
+        weight: 0.0
       - endpoint: "OPUS_COMBO"
         weight: 0.0
       - endpoint: "GEMINI_FLASH_HIGH"
         weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    GrokMode: *verifier_chain
   luna_family:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   terra_family:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   gemini:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   supergrok:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "OPUS_COMBO"
-        weight: 100.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   opus:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   cheap:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain
   ox_combo:
-    SolMode:
-      - endpoint: "SOL_HIGH"
-        weight: 100.0
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 0.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
-    GrokMode:
-      - endpoint: "GROK_4_6_HIGH"
-        weight: 100.0
-      - endpoint: "OPUS_COMBO"
-        weight: 0.0
-      - endpoint: "GEMINI_FLASH_HIGH"
-        weight: 0.0
+    SolMode: *verifier_chain
+    GrokMode: *verifier_chain

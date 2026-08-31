@@ -111,38 +111,35 @@ class RuntimePolicyTests(unittest.TestCase):
     # -------------------------------------------------------------------------
     # F. GrokMode contains zero GPT Plus eligibility
     # -------------------------------------------------------------------------
-    def test_grokmode_zero_gpt_plus_eligibility(self):
+    def test_modes_preserve_canonical_role_policy(self):
         policy = load_runtime_policy(CONFIG_PATH)
-        gpt_plus_endpoints = set(policy.domains["gpt_plus"].endpoint_ids)
-        for (role, mode, overlay), candidates in policy.role_weights.items():
-            if mode == GROK_MODE:
-                for c in candidates:
-                    self.assertNotIn(
-                        c.endpoint_id,
-                        gpt_plus_endpoints,
-                        f"GrokMode role {role} contains GPT Plus endpoint {c.endpoint_id}",
-                    )
-        for ep in policy.boss_chains[GROK_MODE]:
-            self.assertNotIn(
-                ep,
-                gpt_plus_endpoints,
-                f"GrokMode boss chain contains GPT Plus endpoint {ep}",
+        expected = {
+            "BOSS": [("SOL_HIGH", "gpt-5.6-sol", "high"), ("GROK_4_6_HIGH", "nine-router/gcli/grok-4.6-high", "high"), ("GROK_CURSOR_HIGH", "nine-router/cu/cursor-grok-4.6-high", "high")],
+            "SCOUT": [("GEMINI_FLASH_MEDIUM", "nine-router/ag/gemini-3.7-flash-medium", "medium"), ("QWEN_3_8_FLASH", "commandcode/qwen3.8-flash", "high")],
+            "STANDARD_WORKER": [("GEMINI_FLASH_HIGH", "nine-router/ag/gemini-3.7-flash-high", "high"), ("PLUS_LUNA", "gpt-5.6-luna", "max")],
+            "DEEP_WORKER": [("GROK_4_6_HIGH", "nine-router/gcli/grok-4.6-high", "high"), ("GEMINI_FLASH_HIGH", "nine-router/ag/gemini-3.7-flash-high", "high"), ("SOL_HIGH", "gpt-5.6-sol", "high")],
+            "VERIFIER": [("SOL_HIGH", "gpt-5.6-sol", "high"), ("GROK_4_6_HIGH", "nine-router/gcli/grok-4.6-high", "high"), ("OPUS_COMBO", "nine-router/Opus", "high"), ("GEMINI_FLASH_HIGH", "nine-router/ag/gemini-3.7-flash-high", "high")],
+            "PREMIUM_SECOND_OPINION": [("OPUS_COMBO", "nine-router/Opus", "high"), ("PLUS_TERRA", "gpt-5.6-terra", "high")],
+        }
+        for role, entries in expected.items():
+            self.assertEqual(
+                [(item.endpoint_id, item.model, item.effort) for item in policy.operator_policy[role]],
+                entries,
             )
-
+        self.assertEqual(boss_chain_for(policy, SOL_MODE), boss_chain_for(policy, GROK_MODE))
+        for role in ("SCOUT", "STANDARD_WORKER", "DEEP_WORKER"):
+            self.assertEqual(
+                weights_for(policy, role, SOL_MODE, False),
+                weights_for(policy, role, GROK_MODE, False),
+            )
     # -------------------------------------------------------------------------
-    # G & H. Sol absent from Standard Worker and Deep Worker
-    # -------------------------------------------------------------------------
-    def test_sol_absent_from_workers(self):
+    def test_standard_worker_excludes_sol_but_deep_worker_allows_canonical_sol(self):
         policy = load_runtime_policy(CONFIG_PATH)
         for (role, mode, overlay), candidates in policy.role_weights.items():
-            if role in ("STANDARD_WORKER", "DEEP_WORKER"):
-                for c in candidates:
-                    self.assertNotEqual(
-                        c.endpoint_id,
-                        "SOL_HIGH",
-                        f"SOL_HIGH found in {role} for mode {mode}",
-                    )
-
+            if role == "STANDARD_WORKER":
+                self.assertNotIn("SOL_HIGH", [c.endpoint_id for c in candidates])
+            if role == "DEEP_WORKER" and not overlay:
+                self.assertIn("SOL_HIGH", [c.endpoint_id for c in candidates])
     # -------------------------------------------------------------------------
     # I. Scout forbidden-model invariant (no Sol, Grok, Opus)
     # -------------------------------------------------------------------------
@@ -182,14 +179,14 @@ class RuntimePolicyTests(unittest.TestCase):
         )
 
     # -------------------------------------------------------------------------
-    # M. GrokMode base worker exact 75/25
+    # M. Both modes translate to the same Standard Worker chain
     # -------------------------------------------------------------------------
     def test_grokmode_base_worker_100(self):
         policy = load_runtime_policy(CONFIG_PATH)
         grok_base = weights_for(policy, "STANDARD_WORKER", GROK_MODE, False)
         self.assertEqual(
             [(c.endpoint_id, c.weight) for c in grok_base],
-            [("GEMINI_FLASH_HIGH", 100.0), ("QWEN_3_8_FLASH", 0.0)],
+            [("GEMINI_FLASH_HIGH", 100.0), ("PLUS_LUNA", 0.0)],
         )
 
     # -------------------------------------------------------------------------
@@ -213,34 +210,27 @@ class RuntimePolicyTests(unittest.TestCase):
         self.assertEqual(resolution.get("eligibility"), "unverified")
 
     # -------------------------------------------------------------------------
-    # P. Reviewer GPT-family independence rule
+    # P. Common Reviewer / Verifier chain is independent of mode
     # -------------------------------------------------------------------------
-    def test_reviewer_sol_family_independence(self):
+    def test_reviewer_common_chain_is_mode_independent(self):
         policy = load_runtime_policy(CONFIG_PATH)
+        expected = (
+            CandidateWeight("SOL_HIGH", 100.0),
+            CandidateWeight("GROK_4_6_HIGH", 0.0),
+            CandidateWeight("OPUS_COMBO", 0.0),
+            CandidateWeight("GEMINI_FLASH_HIGH", 0.0),
+        )
         for mode in (SOL_MODE, GROK_MODE):
-            row = policy.reviewer_tables.get(("sol_family", mode))
-            self.assertIsNotNone(row)
-            for c in row:
-                grp = group_of(policy, c.endpoint_id)
-                self.assertNotEqual(
-                    grp,
-                    "sol_family",
-                    f"Reviewer table for sol_family in {mode} contains sol_family candidate {c.endpoint_id}",
-                )
+            self.assertEqual(policy.reviewer_tables[("sol_family", mode)], expected)
 
     # -------------------------------------------------------------------------
     # Boss chains
     # -------------------------------------------------------------------------
     def test_boss_chains(self):
         policy = load_runtime_policy(CONFIG_PATH)
-        self.assertEqual(
-            boss_chain_for(policy, SOL_MODE),
-            ("SOL_HIGH", "GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
-        )
-        self.assertEqual(
-            boss_chain_for(policy, GROK_MODE),
-            ("GROK_4_6_HIGH", "OPUS_COMBO", "GEMINI_FLASH_HIGH"),
-        )
+        expected = ("SOL_HIGH", "GROK_4_6_HIGH", "GROK_CURSOR_HIGH")
+        self.assertEqual(boss_chain_for(policy, SOL_MODE), expected)
+        self.assertEqual(boss_chain_for(policy, GROK_MODE), expected)
 
     # -------------------------------------------------------------------------
     # Static Validation & Error Cases
@@ -307,10 +297,10 @@ class RuntimePolicyTests(unittest.TestCase):
             )
         self._assert_validation_error(mod, "SCOUT")
 
-    def test_rejects_gpt_plus_in_grokmode_boss(self):
+    def test_rejects_divergent_grokmode_boss_chain(self):
         def mod(data):
             data["boss_chains"]["GrokMode"].append("SOL_HIGH")
-        self._assert_validation_error(mod, "GrokMode")
+        self._assert_validation_error(mod, "BOSS")
 
     def test_rejects_luna_xhigh_marked_verified(self):
         def mod(data):
