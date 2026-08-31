@@ -91,7 +91,7 @@ cd multi-orchestrator
 codex --profile sol-luna
 
 # In chat:
-Use $sol-luna-orchestrator-v2 to plan and execute this feature with multi-role subagents.
+$autoteam: Plan and execute this feature with multi-role subagents.
 ```
 
 ---

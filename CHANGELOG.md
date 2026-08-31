@@ -5,10 +5,25 @@ All notable changes to the Orchestrator project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-31
+
+### Added
+- Canonical Auto Team skill (`autoteam` / `$autoteam`) replacing twin wrappers.
+- Unified native Codex + Codex Router model supply discovery.
+- Adaptive concurrency scheduler (6 active slots; scouts 2 / standard workers 4 / deep workers 2; Boss outside cap; pipelined reviewers; disjoint `owned_files`).
+- Primary-first ordered failover routing: parallel agents replicate the healthy primary.
+
+### Changed
+- Role chains are priority/failover, not weighted load-balancing. Digest/bucket no longer skip a healthy earlier candidate.
+- Reviewer independence uses granular families (`GPT_5_6_SOL` vs `GPT_5_6_LUNA` vs `GPT_5_6_TERRA`). Gemini implementer -> Sol High; Sol implementer -> Grok High.
+- Installer/verifier ship `skills/autoteam` and `runtime_adaptive_scheduler.py`.
+
+### Removed
+- `sol-luna-orchestrator-v2` and `grok-orchestrator-v2` skill packages.
+
 ## [1.3.0] - 2026-08-30
 
 ### Added
-- **Mode-Aware Weighted Runtime Routing (SolMode / GrokMode):**
   - Persistent manual mode state storage (`~/.agents/runtime-routing/mode.json`) and CLI (`orchestrator-mode status|SolMode|GrokMode`).
   - Master activation switch (`orchestrator-routing on|off|status`) with immediate legacy rollback kill-switch.
   - Pure deterministic weighted model selection algorithm based on single SHA-256 cumulative bucket.

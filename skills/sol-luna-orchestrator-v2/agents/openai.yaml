@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sol-Luna Orchestrator V2"
-  short_description: "Sol High planning with provider-qualified worker identities"
-  default_prompt: "Use $sol-luna-orchestrator-v2 to plan this complex task with a dedicated Sol Boss, delegate bounded work using the Shared Core, and integrate the result."

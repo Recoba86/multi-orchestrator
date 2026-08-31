@@ -107,8 +107,9 @@ echo "Target Root: ${TARGET_HOME}"
 echo ""
 
 CORE="${TARGET_HOME}/.agents/orchestrator-shared/ORCHESTRATOR_CORE.md"
-SOL_SKILL="${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/SKILL.md"
-GROK_SKILL="${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/SKILL.md"
+AUTOTEAM_SKILL="${TARGET_HOME}/.agents/skills/autoteam/SKILL.md"
+AUTOTEAM_USAGE="${TARGET_HOME}/.agents/skills/autoteam/USAGE.md"
+AUTOTEAM_CONFIG="${TARGET_HOME}/.agents/skills/autoteam/agents/openai.yaml"
 CODEX_AGENTS="${TARGET_HOME}/.codex/agents"
 SOL_CONFIG="${TARGET_HOME}/.codex/sol-luna.config.toml"
 GROK_CONFIG="${TARGET_HOME}/.codex/grok-v2.config.toml"
@@ -127,6 +128,7 @@ MODEL_POLICY_MODULES=(
 MODEL_POLICY_MODULES+=( "policy_validator" )
 RUNTIME_ROUTING_MODULES=(
   "runtime_routing_mode"
+  "runtime_adaptive_scheduler"
   "runtime_routing_policy"
   "runtime_weighted_selector"
   "runtime_boss_binding"
@@ -144,8 +146,9 @@ RUNTIME_ROUTING_CONFIG="${TARGET_HOME}/.agents/config/runtime-routing.yaml"
 
 # 1. Existence Checks
 assert_file_exists "${CORE}"
-assert_file_exists "${SOL_SKILL}"
-assert_file_exists "${GROK_SKILL}"
+assert_file_exists "${AUTOTEAM_SKILL}"
+assert_file_exists "${AUTOTEAM_USAGE}"
+assert_file_exists "${AUTOTEAM_CONFIG}"
 assert_file_exists "${TRACE_HELPER}"
 
 # 1b. Model Policy Payload & Unmanaged Config Existence Checks
@@ -248,12 +251,9 @@ echo "--- Verifying Dedicated Boss & Plane Separation Invariants ---"
 assert_contains "${CORE}" "ROOT_CONTROLLER_MUST_NOT_SELF_PROMOTE" "Core enforces Root Controller cannot self-promote"
 assert_contains "${CORE}" "DEDICATED_BOSS_REQUIRED" "Core enforces Dedicated Boss is mandatory"
 assert_contains "${CORE}" "DEDICATED_BOSS_CONTINUITY_REQUIRED" "Core enforces Dedicated Boss continuity across turns"
-assert_contains "${SOL_SKILL}" "Root Controller" "Sol wrapper defines Root Controller"
-assert_contains "${SOL_SKILL}" "Dedicated Boss Mandatory" "Sol wrapper enforces Dedicated Boss requirement"
-assert_contains "${SOL_SKILL}" "BOSS_BINDING_UNAVAILABLE" "Sol wrapper fails closed on Boss binding failure"
-assert_contains "${GROK_SKILL}" "Root Controller" "Grok wrapper defines Root Controller"
-assert_contains "${GROK_SKILL}" "Dedicated Boss Mandatory" "Grok wrapper enforces Dedicated Boss requirement"
-assert_contains "${GROK_SKILL}" "BOSS_BINDING_UNAVAILABLE" "Grok wrapper fails closed on Boss binding failure"
+assert_contains "${AUTOTEAM_SKILL}" "Root Controller" "Auto Team wrapper defines Root Controller"
+assert_contains "${AUTOTEAM_SKILL}" "Dedicated Boss Mandatory" "Auto Team wrapper enforces Dedicated Boss requirement"
+assert_contains "${AUTOTEAM_SKILL}" "BOSS_BINDING_UNAVAILABLE" "Auto Team wrapper fails closed on Boss binding failure"
 
 # 6. Verification Invariant & Exhaustion
 echo "--- Verifying Independent Verification & Exhaustion ---"

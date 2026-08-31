@@ -1,0 +1,5 @@
+name: autoteam
+description: "Auto Team orchestrator: Plan complex software tasks using a dedicated Boss and delegate bounded workstreams with verified cognitive independence and telemetry."
+model: gpt-5.6-sol
+model_reasoning_effort: high
+prompt: "Use $autoteam to plan and execute multi-subagent implementation missions with strict plane separation and independent verification."

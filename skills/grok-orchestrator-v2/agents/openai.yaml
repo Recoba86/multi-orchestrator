@@ -1,4 +1,0 @@
-interface:
-  display_name: "Grok Orchestrator V2"
-  short_description: "Grok 4.6 High planning with multi-role subagents using the Shared Core"
-  default_prompt: "Use $grok-orchestrator-v2 to plan this complex task, delegate bounded work using the Shared Core, and integrate the result."

@@ -5,7 +5,7 @@
 Multi Orchestrator implements a 3-plane Hub-and-Spoke architecture:
 
 1. **Control Plane (Root Controller):** The model selected in the active session/UI. Responsible for validating Boss actions against Core policy, submitting protocol-validated requests to the external Codex Host, relaying Host-returned facts, managing Mission Trace persistence, and refusing invalid submissions or continuation.
-2. **Decision Plane (Dedicated Skill-Bound Boss):** A dedicated child requested at the endpoint/model required by the invoked skill (Sol High for `sol-luna-orchestrator-v2`, Grok High for `grok-orchestrator-v2`) and accepted only after matching runtime evidence. Responsible for task planning, packet formation, role selection, verifier assignment, and final acceptance.
+2. **Decision Plane (Dedicated Skill-Bound Boss):** A dedicated child requested at the endpoint/model required by the invoked skill (`gpt-5.6-sol` High for `$autoteam`) and accepted only after matching runtime evidence. Responsible for task planning, packet formation, role selection, verifier assignment, and final acceptance.
 3. **Execution Plane (Workers / Scouts / Verifiers / Reviewers):** Leaf execution subagents.
 
 ```text

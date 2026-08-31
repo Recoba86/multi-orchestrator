@@ -113,6 +113,12 @@ When evaluating system state, capabilities, or configuration, the following stri
 ### A. Skill Boss Bindings
 ```yaml
 skill_boss_bindings:
+  autoteam:
+    required_boss_endpoint: SOL_HIGH
+    model: gpt-5.6-sol
+    effort: high
+    dedicated_boss_required: true
+
   grok-orchestrator-v2:
     required_boss_endpoint: GROK_4_6_HIGH
     model: nine-router/gcli/grok-4.6-high

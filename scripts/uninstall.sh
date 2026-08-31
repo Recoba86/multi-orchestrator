@@ -42,6 +42,8 @@ fi
 
 # Clean empty directories left behind by removed payload files.
 remove_dir_if_empty "${TARGET_HOME}/.agents/orchestrator-shared"
+remove_dir_if_empty "${TARGET_HOME}/.agents/skills/autoteam/agents"
+remove_dir_if_empty "${TARGET_HOME}/.agents/skills/autoteam"
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2/agents"
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/sol-luna-orchestrator-v2"
 remove_dir_if_empty "${TARGET_HOME}/.agents/skills/grok-orchestrator-v2/agents"

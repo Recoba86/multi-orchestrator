@@ -36,12 +36,9 @@ RESERVED_UNMANAGED_RELS = (
 # (repo-relative source, target-home-relative destination)
 PAYLOAD = [
     ("core/ORCHESTRATOR_CORE.md", ".agents/orchestrator-shared/ORCHESTRATOR_CORE.md"),
-    ("skills/sol-luna-orchestrator-v2/SKILL.md", ".agents/skills/sol-luna-orchestrator-v2/SKILL.md"),
-    ("skills/sol-luna-orchestrator-v2/USAGE.md", ".agents/skills/sol-luna-orchestrator-v2/USAGE.md"),
-    ("skills/sol-luna-orchestrator-v2/agents/openai.yaml", ".agents/skills/sol-luna-orchestrator-v2/agents/openai.yaml"),
-    ("skills/grok-orchestrator-v2/SKILL.md", ".agents/skills/grok-orchestrator-v2/SKILL.md"),
-    ("skills/grok-orchestrator-v2/USAGE.md", ".agents/skills/grok-orchestrator-v2/USAGE.md"),
-    ("skills/grok-orchestrator-v2/agents/openai.yaml", ".agents/skills/grok-orchestrator-v2/agents/openai.yaml"),
+    ("skills/autoteam/SKILL.md", ".agents/skills/autoteam/SKILL.md"),
+    ("skills/autoteam/USAGE.md", ".agents/skills/autoteam/USAGE.md"),
+    ("skills/autoteam/agents/openai.yaml", ".agents/skills/autoteam/agents/openai.yaml"),
     ("scripts/mission-trace.py", ".agents/bin/mission-trace"),
     ("core/model_availability.py", ".agents/core/model_availability.py"),
     ("core/model_capabilities.py", ".agents/core/model_capabilities.py"),
@@ -51,6 +48,7 @@ PAYLOAD = [
     ("core/model_resolver.py", ".agents/core/model_resolver.py"),
     ("core/policy_validator.py", ".agents/core/policy_validator.py"),
     ("core/runtime_routing_mode.py", ".agents/core/runtime_routing_mode.py"),
+    ("core/runtime_adaptive_scheduler.py", ".agents/core/runtime_adaptive_scheduler.py"),
     ("core/runtime_routing_policy.py", ".agents/core/runtime_routing_policy.py"),
     ("core/runtime_weighted_selector.py", ".agents/core/runtime_weighted_selector.py"),
     ("core/runtime_boss_binding.py", ".agents/core/runtime_boss_binding.py"),
