@@ -16,6 +16,7 @@ from core.runtime_routing_mode import GROK_MODE, SOL_MODE, RoutingMode
 
 __all__ = [
     "CandidateWeight",
+    "ConcurrencyConfig",
     "FailureDomain",
     "RuntimePolicy",
     "PolicyValidationError",
@@ -44,6 +45,14 @@ class FailureDomain:
 
 
 @dataclass(frozen=True)
+class ConcurrencyConfig:
+    max_active_subagents: int = 6
+    max_parallel_scouts: int = 2
+    max_parallel_standard_workers: int = 4
+    max_parallel_deep_workers: int = 2
+
+
+@dataclass(frozen=True)
 class RuntimePolicy:
     domains: dict[str, FailureDomain]
     independence_groups: dict[str, tuple[str, ...]]
@@ -53,10 +62,12 @@ class RuntimePolicy:
     global_targets: dict[str, float]
     ox_overlay: str
     endpoint_resolution: dict[str, dict[str, Any]]
+    concurrency: ConcurrencyConfig = ConcurrencyConfig()
 
 
 _KNOWN_TOP_LEVEL_KEYS = {
     "schema_version",
+    "concurrency",
     "failure_domains",
     "independence_groups",
     "global_targets",
@@ -139,7 +150,8 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
     if extra_keys:
         _fail(f"unknown top-level key(s): {', '.join(sorted(extra_keys))}")
 
-    missing_keys = _KNOWN_TOP_LEVEL_KEYS - set(raw.keys())
+    required_keys = _KNOWN_TOP_LEVEL_KEYS - {"concurrency"}
+    missing_keys = required_keys - set(raw.keys())
     if missing_keys:
         _fail(f"missing required top-level key(s): {', '.join(sorted(missing_keys))}")
 
@@ -353,9 +365,9 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
                 )
                 rev_total += w
 
-                # GPT independence rule: GPT implementer cannot be reviewed by GPT candidate
-                if grp_key == "gpt_family" and ep in parsed_groups.get("gpt_family", ()):
-                    _fail(f"GPT-family implementer cannot be reviewed by GPT-family candidate {ep}")
+                # Implementer group cannot review itself
+                if ep in parsed_groups.get(grp_key, ()):
+                    _fail(f"{grp_key} implementer cannot be reviewed by same-group candidate {ep}")
 
                 if mode_enum == GROK_MODE and ep in gpt_plus_endpoints:
                     _fail(f"GrokMode reviewer table includes prohibited gpt_plus endpoint {ep}")
@@ -367,6 +379,24 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
 
             parsed_reviewer[(grp_key, mode_enum)] = tuple(cands)
 
+    raw_concurrency = raw.get("concurrency", {})
+    if raw_concurrency is None:
+        raw_concurrency = {}
+    if not isinstance(raw_concurrency, dict):
+        _fail("concurrency must be a mapping")
+    max_active = int(raw_concurrency.get("max_active_subagents", 6))
+    max_scouts = int(raw_concurrency.get("max_parallel_scouts", 2))
+    max_std = int(raw_concurrency.get("max_parallel_standard_workers", 4))
+    max_deep = int(raw_concurrency.get("max_parallel_deep_workers", 2))
+    if max_active < 1 or max_scouts < 1 or max_std < 1 or max_deep < 1:
+        _fail("concurrency limits must be >= 1")
+    concurrency_cfg = ConcurrencyConfig(
+        max_active_subagents=max_active,
+        max_parallel_scouts=max_scouts,
+        max_parallel_standard_workers=max_std,
+        max_parallel_deep_workers=max_deep,
+    )
+
     return RuntimePolicy(
         domains=parsed_domains,
         independence_groups=parsed_groups,
@@ -376,4 +406,5 @@ def load_runtime_policy(path: Path) -> RuntimePolicy:
         global_targets=parsed_targets,
         ox_overlay=ox_state,
         endpoint_resolution=parsed_endpoints,
+        concurrency=concurrency_cfg,
     )

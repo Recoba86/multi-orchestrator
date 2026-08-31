@@ -104,14 +104,11 @@ def weighted_select(
     key: SelectionKey,
     exclude: Collection[str] | None = None,
 ) -> SelectionEvidence:
-    """Select a candidate deterministically using stable SHA-256 integer-exact cumulative walk.
+    """Select the first remaining candidate in declared table order.
 
-    Algorithm (Task 3R integer-exact):
-    - Converts weights to exact integer units.
-    - Hashes canonical key via SHA-256.
-    - Computes exact integer bucket: bucket = (raw_int * total_units) >> 64
-      where 0 <= bucket < total_units.
-    - Walks sorted integer cumulative bounds without floating-point arithmetic.
+    Digest is recorded for audit only. It MUST NOT skip a healthy earlier
+    candidate. Parallel dispatches with different ordinals therefore replicate
+    the same healthy primary.
     """
     if not isinstance(key, SelectionKey):
         raise TypeError(f"key must be a SelectionKey, got {type(key).__name__}")
@@ -132,7 +129,6 @@ def weighted_select(
             raise ValueError(f"duplicate candidate endpoint in input table: {ep!r}")
         seen_endpoints.add(ep)
 
-        # Defensive weight checks
         w = c.weight
         if isinstance(w, bool) or not isinstance(w, (int, float)):
             raise ValueError(f"invalid weight type {type(w).__name__} for endpoint {ep!r}")
@@ -147,33 +143,19 @@ def weighted_select(
     if not survivors:
         raise NoEligibleCandidateError("No eligible candidate remaining after exclusions.")
 
-    # Canonical order by exact endpoint_id for deterministic bucket walk
-    canonical_survivors = sorted(survivors, key=lambda c: c.endpoint_id)
-    units_table = _to_exact_integer_units(canonical_survivors)
-    total_units = sum(u for _, u in units_table)
-
     key_bytes = key.canonical_bytes()
     digest_bytes = hashlib.sha256(key_bytes).digest()
     digest_hex = hashlib.sha256(key_bytes).hexdigest()
 
-    # Exact integer bucket mapping in [0, total_units) using 64-bit multiply-and-shift
-    raw_int = int.from_bytes(digest_bytes[:8], "big")
-    bucket = (raw_int * total_units) >> 64
-
-    cumulative = 0
-    selected = canonical_survivors[-1].endpoint_id
-
-    for ep, unit_w in units_table:
-        cumulative += unit_w
-        if bucket < cumulative:
-            selected = ep
-            break
+    units_table = _to_exact_integer_units(survivors)
+    total_units = sum(u for _, u in units_table)
+    selected = survivors[0].endpoint_id
 
     return SelectionEvidence(
         selected_endpoint=selected,
-        bucket=bucket,
+        bucket=0,
         total_weight_units=total_units,
-        effective_candidates=tuple(c.endpoint_id for c in canonical_survivors),
+        effective_candidates=tuple(c.endpoint_id for c in survivors),
         excluded_candidates=tuple(sorted(excluded_found)),
         selection_key_digest=digest_hex,
         algorithm_version=ALGORITHM_VERSION,

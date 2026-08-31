@@ -43,6 +43,7 @@ CONTINUE_EXISTING_BOSS = "CONTINUE_EXISTING_BOSS"
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "runtime-routing.yaml"
 
 _LEGACY_BINDINGS = {
+    "autoteam": "SOL_HIGH",
     "sol-luna-orchestrator-v2": "SOL_HIGH",
     "grok-orchestrator-v2": "GROK_4_6_HIGH",
 }
