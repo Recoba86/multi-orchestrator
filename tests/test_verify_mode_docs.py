@@ -28,6 +28,8 @@ class ModeDocsVerificationTests(unittest.TestCase):
         self.assertIn("^[a-z0-9_]+$", content)
         self.assertIn("autoteam_scout_01_mission_1787106000", content)
         self.assertIn("HOST_AGENT_NAME_INVALID", content)
+        self.assertIn("session_meta.base_instructions.provenance", content)
+        self.assertIn("turn_context.model", content)
         self.assertNotIn("task_name: <child task name>", content)
 
     def test_usage_markdown_documents_cli_and_trigger_phrases(self):

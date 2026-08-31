@@ -92,10 +92,13 @@ For every Auto Team child creation (`DEDICATED_BOSS`, `SCOUT`,
 4. After creation, obtain Host-returned child/session evidence for the effective
    model and reasoning effort. Record `requested_model`,
    `requested_effort`, `effective_model`, `effective_effort`, and
-   `MATCH`/`MISMATCH`. If either effective value is unavailable, record
-   `UNPROVEN` and fail closed. If either value differs, interrupt the child,
-   record `HOST_MODEL_BINDING_ERROR` with `MISMATCH`, and do not relay a
-   follow-up, select a post-spawn fallback, or continue the mission.
+   `MATCH`/`MISMATCH`. Authoritative effective identity is defined by
+   Host/session state (`threads.model`/`threads.reasoning_effort` in `~/.codex/state_5.sqlite`,
+   or `turn_context.model` in child rollout). Note that `session_meta.base_instructions.provenance`
+   merely records the root/parent session launcher, NOT the child agent's effective model.
+   If either effective value is unavailable, record `UNPROVEN` and fail closed.
+   If authoritative values differ, interrupt the child, record `HOST_MODEL_BINDING_ERROR`
+   with `MISMATCH`, and do not relay a follow-up, select a post-spawn fallback, or continue.
 
 `followup_task` preserves the already-bound child and is not a substitute for
 explicit binding when creating a new child.
