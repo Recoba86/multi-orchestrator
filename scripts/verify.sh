@@ -346,6 +346,13 @@ assert_contains "${CORE}" "VERIFICATION_PACKET:" "Verification packet schema def
 assert_contains "${CORE}" "prior_attempt_summary:" "Rework schema defined"
 assert_contains "${CORE}" "PACKET_INVALID" "Packet invalidity rule defined"
 assert_contains "${CORE}" "Pre-Execution Invariant" "Packet failure blocks worker spawn without provider fallback"
+assert_contains "${CORE}" "HOST_MODEL_BINDING_REQUIRED" "Core requires explicit native Host model binding"
+assert_contains "${CORE}" "HOST_MODEL_BINDING_ERROR" "Core defines fail-closed Host binding error"
+assert_contains "${CORE}" "host_spawn_request" "Core records native Host spawn request"
+assert_contains "${CORE}" "effective_model" "Core records Host effective model identity"
+assert_contains "${AUTOTEAM_SKILL}" "model: <validated requested_model>" "Auto Team passes model to spawn_agent"
+assert_contains "${AUTOTEAM_SKILL}" "reasoning_effort: <validated requested_effort>" "Auto Team passes effort to spawn_agent"
+assert_contains "${AUTOTEAM_SKILL}" "parent/default model" "Auto Team forbids parent-model inheritance fallback"
 
 # 5. Dedicated Boss & Plane Separation Checks
 echo "--- Verifying Dedicated Boss & Plane Separation Invariants ---"

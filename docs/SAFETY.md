@@ -20,6 +20,11 @@
 ### D. Ambiguous Write State Fail-Closed
 - If a write-capable worker experiences a mid-turn drop, timeout, or 502 with uncertain mutation state (`AMBIGUOUS_EXECUTION_STATE`), automatic fallback is strictly forbidden.
 - The Boss halts the task, and the Controller refuses further write-capable Host requests until manual or factual state inspection resolves the ambiguity.
+### E. Explicit Native Host Model Binding
+- After route selection, every Auto Team child is created with top-level `model`, `reasoning_effort`, and `fork_turns="none"` arguments on the native `spawn_agent` call.
+- A missing schema field, rejected override, or unavailable/mismatched Host-returned identity produces `HOST_MODEL_BINDING_ERROR` and stops the mission.
+- The Controller never substitutes the root/parent model, silently omits an override, or selects a post-spawn fallback to hide a binding failure.
+- Requested and effective identities are recorded separately in Mission Trace as `MATCH`, `MISMATCH`, or `UNPROVEN`; native allocation remains `HOST_EXTERNAL`.
 
 ---
 

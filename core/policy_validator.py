@@ -151,6 +151,101 @@ class PolicyValidator:
 
         return True, None
 
+    @staticmethod
+    def _host_schema_properties(spawn_schema: Any) -> Dict[str, Any]:
+        """Return the native spawn input properties without inferring aliases."""
+        if not isinstance(spawn_schema, dict):
+            return {}
+        candidates = [spawn_schema]
+        for key in ("inputSchema", "schema"):
+            nested = spawn_schema.get(key)
+            if isinstance(nested, dict):
+                candidates.append(nested)
+        for candidate in candidates:
+            properties = candidate.get("properties")
+            if isinstance(properties, dict):
+                return properties
+        return {}
+
+    def validate_host_spawn_request(
+        self,
+        requested_ep: str,
+        requested_model: str,
+        requested_effort: str,
+        spawn_schema: Dict[str, Any],
+        spawn_request: Dict[str, Any],
+    ) -> Tuple[bool, Optional[str]]:
+        """Fail closed unless the native spawn request carries the route binding."""
+        if requested_ep not in self.endpoints:
+            return False, f"HOST_MODEL_BINDING_ERROR: REJECT_UNKNOWN_ENDPOINT: {requested_ep}"
+
+        endpoint = self.endpoints[requested_ep]
+        canonical_model = endpoint.get("model")
+        if canonical_model and requested_model != canonical_model:
+            return False, (
+                "HOST_MODEL_BINDING_ERROR: "
+                f"REJECT_REQUESTED_MODEL_MISMATCH: {requested_model} != {canonical_model}"
+            )
+        ok, error = self.validate_endpoint_effort(requested_ep, requested_effort)
+        if not ok:
+            return False, f"HOST_MODEL_BINDING_ERROR: {error}"
+        properties = self._host_schema_properties(spawn_schema)
+        missing_schema_fields = [
+            field for field in ("model", "reasoning_effort") if field not in properties
+        ]
+        if missing_schema_fields:
+            return False, (
+                "HOST_MODEL_BINDING_ERROR: effective spawn_agent schema does not "
+                f"expose {', '.join(missing_schema_fields)}"
+            )
+
+        if not isinstance(spawn_request, dict):
+            return False, "HOST_MODEL_BINDING_ERROR: spawn_agent request is not an object"
+        for field in ("model", "reasoning_effort"):
+            if field not in spawn_request or not spawn_request[field]:
+                return False, f"HOST_MODEL_BINDING_ERROR: spawn_agent request is missing {field}"
+        if spawn_request["model"] != requested_model:
+            return False, (
+                "HOST_MODEL_BINDING_ERROR: spawn_agent model argument does not match "
+                f"requested model ({spawn_request['model']} != {requested_model})"
+            )
+        if spawn_request["reasoning_effort"] != requested_effort:
+            return False, (
+                "HOST_MODEL_BINDING_ERROR: spawn_agent reasoning_effort argument does "
+                f"not match requested effort ({spawn_request['reasoning_effort']} != {requested_effort})"
+            )
+        if spawn_request.get("fork_turns") != "none":
+            return False, (
+                "HOST_MODEL_BINDING_ERROR: spawn_agent fork_turns must be 'none' "
+                f"(got {spawn_request.get('fork_turns')!r})"
+            )
+        return True, None
+
+    def validate_host_model_binding(
+        self,
+        requested_ep: str,
+        requested_model: str,
+        requested_effort: str,
+        effective_model: Optional[str],
+        effective_effort: Optional[str],
+    ) -> Tuple[bool, Optional[str]]:
+        """Require Host-returned identity to match the pre-spawn route exactly."""
+        if effective_model in (None, "", "UNPROVEN"):
+            return False, "HOST_MODEL_BINDING_ERROR: effective model is UNPROVEN"
+        if effective_effort in (None, "", "UNPROVEN"):
+            return False, "HOST_MODEL_BINDING_ERROR: effective effort is UNPROVEN"
+
+        ok, err = self.validate_controller_execution_binding(
+            requested_ep,
+            requested_model,
+            requested_effort,
+            requested_ep,
+            effective_model,
+            effective_effort,
+        )
+        if not ok:
+            return False, f"HOST_MODEL_BINDING_ERROR: {err}"
+        return True, None
     def validate_verifier_independence(self, implementer_id: str, verifier_id: str) -> Tuple[bool, Optional[str]]:
         if implementer_id not in self.endpoints:
             return False, f"REJECT_UNKNOWN_ENDPOINT: {implementer_id}"

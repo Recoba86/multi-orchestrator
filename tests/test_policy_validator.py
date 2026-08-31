@@ -221,6 +221,97 @@ skill_boss_bindings:
         self.assertFalse(ok)
         self.assertIn("REJECT_CONTROLLER_SUBSTITUTION", err)
 
+    def test_host_spawn_request_requires_explicit_model_and_effort(self):
+        spawn_schema = {
+            "properties": {
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "fork_turns": {"enum": ["none"]},
+            }
+        }
+        spawn_request = {
+            "model": "gpt-5.6-sol",
+            "reasoning_effort": "high",
+            "fork_turns": "none",
+        }
+        ok, err = self.validator.validate_host_spawn_request(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            spawn_schema,
+            spawn_request,
+        )
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
+        missing_model = dict(spawn_request)
+        del missing_model["model"]
+        ok, err = self.validator.validate_host_spawn_request(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            spawn_schema,
+            missing_model,
+        )
+        self.assertFalse(ok)
+        self.assertIn("HOST_MODEL_BINDING_ERROR", err)
+        self.assertIn("model", err)
+
+        schema_without_override = {"properties": {"model": {"type": "string"}}}
+        ok, err = self.validator.validate_host_spawn_request(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            schema_without_override,
+            spawn_request,
+        )
+        self.assertFalse(ok)
+        self.assertIn("HOST_MODEL_BINDING_ERROR", err)
+        self.assertIn("reasoning_effort", err)
+
+    def test_host_model_binding_rejects_inheritance_and_unproven_identity(self):
+        ok, err = self.validator.validate_host_model_binding(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            "gpt-5.6-luna",
+            "high",
+        )
+        self.assertFalse(ok)
+        self.assertIn("HOST_MODEL_BINDING_ERROR", err)
+        self.assertIn("REJECT_CONTROLLER_MODEL_SUBSTITUTION", err)
+
+        ok, err = self.validator.validate_host_model_binding(
+            "GEMINI_FLASH_MEDIUM",
+            "nine-router/ag/gemini-3.7-flash-medium",
+            "medium",
+            "UNPROVEN",
+            "UNPROVEN",
+        )
+        self.assertFalse(ok)
+        self.assertEqual(err, "HOST_MODEL_BINDING_ERROR: effective model is UNPROVEN")
+
+    def test_host_model_binding_accepts_luna_root_to_sol_and_gemini_routes(self):
+        ok, err = self.validator.validate_host_model_binding(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            "gpt-5.6-sol",
+            "high",
+        )
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
+        ok, err = self.validator.validate_host_model_binding(
+            "GEMINI_FLASH_MEDIUM",
+            "nine-router/ag/gemini-3.7-flash-medium",
+            "medium",
+            "nine-router/ag/gemini-3.7-flash-medium",
+            "medium",
+        )
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
     def test_verifier_independence_and_luna_family_conflict(self):
         ok, err = self.validator.validate_verifier_independence("GEMINI_FLASH_HIGH", "PLUS_LUNA")
         self.assertTrue(ok)

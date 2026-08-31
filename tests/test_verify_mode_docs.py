@@ -16,6 +16,15 @@ class ModeDocsVerificationTests(unittest.TestCase):
         self.assertIn("SolMode and GrokMode use the same operator-selected Auto Team chains", content)
         self.assertIn("Exact legacy submitted-request authority is restored", content)
         self.assertIn("$autoteam", content)
+    def test_skill_requires_explicit_native_host_binding(self):
+        content = AUTOTEAM_SKILL_MD.read_text(encoding="utf-8")
+        self.assertIn("spawn_agent({", content)
+        self.assertIn("model: <validated requested_model>", content)
+        self.assertIn("reasoning_effort: <validated requested_effort>", content)
+        self.assertIn("HOST_MODEL_BINDING_ERROR", content)
+        self.assertIn("parent/default model", content)
+        self.assertIn("effective_model", content)
+        self.assertIn("UNPROVEN", content)
 
     def test_usage_markdown_documents_cli_and_trigger_phrases(self):
         content = AUTOTEAM_USAGE_MD.read_text(encoding="utf-8")
