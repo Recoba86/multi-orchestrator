@@ -19,6 +19,21 @@ Native allocation and resolved effective identity remain `HOST_EXTERNAL`. The
 wrapper controls protocol validation and request submission, and MUST pass the
 validated model binding explicitly at the native Host boundary.
 
+### Native Host task-name contract (mandatory)
+
+Codex validates the native `task_name` as an `agent_name`. For every Auto Team
+child, use a bare identifier matching `^[a-z0-9_]+$`:
+
+- Generate a unique mission-scoped name such as
+  `autoteam_scout_01_mission_1787106000`.
+- Lowercase the role and mission slug, replace every character outside
+  `[a-z0-9_]` with `_`, collapse repeated underscores, and validate the final
+  value before calling `spawn_agent`.
+- Never use a workspace path (for example `/root/...`), hyphens, spaces, or
+  uppercase characters in `task_name`.
+- If the final name is invalid, do not call the Host; report
+  `HOST_AGENT_NAME_INVALID` and generate a corrected bare name.
+
 ## Declarative model-role configuration
 
 The source repository's [`config/models.yaml`](../../config/models.yaml) is a provider-agnostic, user-editable contract for `planner`, `scout`, `worker`, and `reviewer`. Its ordered `preferred` and `fallback` values are optional model recommendations, not universal requirements. Controller executes read-only preflight of installed Doctor / unmanaged configuration (`~/.agents/config/models.yaml`) and passes factual resolution status to Boss in the environment summary. Advisory preflight results never automatically apply configuration or reorder Core role or verifier chains. Missing, invalid, or unresolved advisory configuration never authorizes automatic model substitution or config mutation; users must explicitly invoke `configure-models` with approval and file SHA-256 digest. Core required Boss bindings, endpoint registry, role chains, verifier independence, packet identity, and requested `fork_turns="none"` remain strictly Core-only.
@@ -57,7 +72,7 @@ For every Auto Team child creation (`DEDICATED_BOSS`, `SCOUT`,
 
    ```text
    spawn_agent({
-     task_name: <child task name>,
+     task_name: <validated lowercase agent name>,
      fork_turns: "none",
      model: <validated requested_model>,
      reasoning_effort: <validated requested_effort>,

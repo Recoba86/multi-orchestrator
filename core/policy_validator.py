@@ -8,6 +8,9 @@ import re
 import yaml
 from typing import Dict, Any, Tuple, Optional
 
+
+_HOST_AGENT_NAME_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
 def load_policy_from_core(core_path: str) -> Dict[str, Any]:
     if not os.path.exists(core_path):
         raise FileNotFoundError(f"Authoritative core file not found: {core_path}")
@@ -198,12 +201,18 @@ class PolicyValidator:
                 "HOST_MODEL_BINDING_ERROR: effective spawn_agent schema does not "
                 f"expose {', '.join(missing_schema_fields)}"
             )
+        if "task_name" not in properties:
+            return False, "HOST_AGENT_NAME_INVALID: effective spawn_agent schema does not expose task_name"
 
         if not isinstance(spawn_request, dict):
             return False, "HOST_MODEL_BINDING_ERROR: spawn_agent request is not an object"
         for field in ("model", "reasoning_effort"):
             if field not in spawn_request or not spawn_request[field]:
                 return False, f"HOST_MODEL_BINDING_ERROR: spawn_agent request is missing {field}"
+        if "task_name" not in spawn_request or not spawn_request["task_name"]:
+            return False, "HOST_AGENT_NAME_INVALID: spawn_agent request is missing task_name"
+        if not isinstance(spawn_request["task_name"], str) or not _HOST_AGENT_NAME_PATTERN.fullmatch(spawn_request["task_name"]):
+            return False, "HOST_AGENT_NAME_INVALID: task_name must contain only lowercase letters, digits, and underscores"
         if spawn_request["model"] != requested_model:
             return False, (
                 "HOST_MODEL_BINDING_ERROR: spawn_agent model argument does not match "

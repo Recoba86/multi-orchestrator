@@ -21,6 +21,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "core"))
 
 from identity_validator import (
+    validate_host_agent_name,
     validate_mission_identity,
     validate_boss_mission_packet,
     validate_boss_action_packet,
@@ -42,6 +43,22 @@ class TestMissionIdentityAndIsolation(unittest.TestCase):
             "starting_sha": "627c6c58150ac618da53fb2c24ab889a277e4005",
             "boss_child_id": "sol_boss_test_100"
         }
+
+    def test_host_agent_name_requires_bare_lowercase_identifier(self):
+        ok, err = validate_host_agent_name("autoteam_scout_01_mission_1787106000")
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
+        for invalid_name in (
+            "/root/autoteam_boss_20260831",
+            "autoteam-boss-20260831",
+            "AutoTeamBoss20260831",
+            "autoteam boss 20260831",
+            "",
+        ):
+            ok, err = validate_host_agent_name(invalid_name)
+            self.assertFalse(ok)
+            self.assertIn("HOST_AGENT_NAME_INVALID", err)
 
     def test_valid_mission_identity(self):
         ok, err = validate_mission_identity(self.valid_identity)

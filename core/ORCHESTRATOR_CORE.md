@@ -29,6 +29,7 @@ MISSION_IDENTITY:
 7. **`MISSION_CONTEXT_MISMATCH_FAIL_CLOSED`:** Any context mismatch in mission ID, workspace root, repository identity, or Boss child ID makes protocol validation fail; the Controller MUST NOT submit that Host request, attempt provider fallback, or take over as Boss.
 8. **`FORK_TURNS_NONE_REQUIRED`:** Every Controller-submitted child request (`DEDICATED_BOSS`, `SCOUT`, `STANDARD_WORKER`, `DEEP_WORKER`, `VERIFIER`, `PREMIUM_SECOND_OPINION`) MUST explicitly request `fork_turns="none"`. Omitting it, setting `fork_turns="all"`, or using any other value is invalid and the Controller MUST refuse submission with `FORK_TURNS_POLICY_VIOLATION`.
 9. **`HOST_MODEL_BINDING_REQUIRED`:** Every Auto Team child request MUST explicitly carry the validated `model` and `reasoning_effort` as native Host spawn arguments. A missing, rejected, unavailable, or mismatched binding fails closed with `HOST_MODEL_BINDING_ERROR`.
+10. **`HOST_AGENT_NAME_REQUIRED`:** Every native Host child request MUST use a bare `task_name` matching `^[a-z0-9_]+$`. A path, hyphen, space, uppercase character, or other invalid name MUST be rejected before submission with `HOST_AGENT_NAME_INVALID`.
 
 ### Execution Boundary Model (`HOST_EXTERNAL`) — Authoritative
 
@@ -36,7 +37,8 @@ The repository controls the orchestration protocol, not Codex native allocation:
 
 - **Repository / Controller boundary:** Core defines packet, policy, identity, routing and selection rules, and verifier-assignment rules; the Boss selects within those rules, and the Controller validates the selections, chooses whether to call the native spawn tool, submits the validated request, relays Host-returned results, and records trace/evidence. A fail-closed rule means the Controller refuses protocol validation, Host request submission, or further protocol continuation.
 - **`HOST_EXTERNAL` boundary:** The Codex Host owns native spawn and host-tool dispatch/interception, child allocation, final effective agent/model/effort identity, context construction, lifecycle, and admission across every native entry point. Repository Markdown, skills, traces, and validators do not execute, intercept, or authorize that allocation.
-- **Auto Team binding contract:** After route selection and validation, the Controller MUST call native `spawn_agent` with top-level `model=<requested_model>`, `reasoning_effort=<requested_effort>`, and `fork_turns="none"`. Endpoint names, agent declarations, packet metadata, and prompt text do not bind a child model.
+- **Auto Team binding contract:** After route selection and validation, the Controller MUST call native `spawn_agent` with a validated bare `task_name`, top-level `model=<requested_model>`, `reasoning_effort=<requested_effort>`, and `fork_turns="none"`. Endpoint names, agent declarations, packet metadata, and prompt text do not bind a child model.
+- **Native task-name contract:** `task_name` is an agent identifier, not a workspace path. Generate a unique mission-scoped name such as `autoteam_scout_01_mission_1787106000`; lower-case the value and replace every character outside `[a-z0-9_]` before validating it. Never submit `/root/...`, hyphenated, spaced, or mixed-case names.
 - **Binding failure contract:** If the effective `spawn_agent` schema lacks either override, the Host rejects either override, or returned child/session evidence does not match both requested values, the Controller MUST stop and report `HOST_MODEL_BINDING_ERROR`. It MUST NOT retry with parent/default inheritance, silently omit an override, submit a post-spawn fallback, or use a subprocess workaround.
 - **Binding evidence:** For each child, the Mission Trace records the requested model/effort, Host-returned effective model/effort, and `MATCH`, `MISMATCH`, or `UNPROVEN`. A mismatch or unproven value prevents follow-up and mission continuation; the Host remains authoritative for the effective identity.
 - **Current guarantee:** A conforming Controller does not submit a request that fails Core validation and does not treat requested configuration as proven effective runtime identity. Returned child/session/transport evidence may prove an observed allocation after the fact.
@@ -818,7 +820,7 @@ actions:
     boss_requested: { endpoint: string, model: string, effort: string, fork_turns: string }
     controller_validation: { result: string, reason: string } # VALID | REJECTED
     identity_validation: { mission_match: boolean, workspace_match: boolean, repository_match: boolean, boss_match: boolean, result: string } # VALID | REJECTED
-    host_spawn_request: { tool: string, model: string, reasoning_effort: string, fork_turns: string } # Exact native arguments submitted by Controller
+    host_spawn_request: { tool: string, task_name: string, model: string, reasoning_effort: string, fork_turns: string } # Exact native arguments submitted by Controller
     controller_executed: { child_id: string, agent_type: string, effective_model: string, effective_effort: string, fork_turns: string } # Host-returned observation, not Controller-owned native execution
     context_isolation: { packet_only: boolean, requested_fork_turns: string, inherited_parent_turns: string } # inherited_parent_turns is UNPROVEN if unobservable
     binding: { requested_model: string, requested_effort: string, effective_model: string, effective_effort: string, status: string } # MATCH | MISMATCH | UNPROVEN
@@ -897,6 +899,7 @@ Every failed attempt MUST be explicitly classified before determining next actio
 ### B. Outcome & Reason Codes
 - `PACKET_INVALID`: Pre-submission schema error; Controller submitted no worker or provider-fallback request.
 - `HOST_MODEL_BINDING_ERROR`: Native `spawn_agent` cannot accept, bind, or prove the requested model/effort; no inherited/default-model retry or post-spawn fallback is permitted.
+- `HOST_AGENT_NAME_INVALID`: Native `spawn_agent` rejected the generated `task_name`; no request is retried with a path, hyphenated, spaced, or mixed-case name.
 - `VERIFIER_CHAIN_EXHAUSTED`: Independent verification unavailable; task remains `INCOMPLETE`.
 - `AMBIGUOUS_EXECUTION_STATE`: Write-capable worker encountered mid-turn error; fail-closed.
 - `LOGIC_OR_TASK_FAILURE`: Defect detected by verifier/tests; leads to structured rework or `BLOCKED`.

@@ -25,6 +25,10 @@ class ModeDocsVerificationTests(unittest.TestCase):
         self.assertIn("parent/default model", content)
         self.assertIn("effective_model", content)
         self.assertIn("UNPROVEN", content)
+        self.assertIn("^[a-z0-9_]+$", content)
+        self.assertIn("autoteam_scout_01_mission_1787106000", content)
+        self.assertIn("HOST_AGENT_NAME_INVALID", content)
+        self.assertNotIn("task_name: <child task name>", content)
 
     def test_usage_markdown_documents_cli_and_trigger_phrases(self):
         content = AUTOTEAM_USAGE_MD.read_text(encoding="utf-8")

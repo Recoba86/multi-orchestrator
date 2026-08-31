@@ -226,12 +226,14 @@ skill_boss_bindings:
             "properties": {
                 "model": {"type": "string"},
                 "reasoning_effort": {"type": "string"},
+                "task_name": {"type": "string"},
                 "fork_turns": {"enum": ["none"]},
             }
         }
         spawn_request = {
             "model": "gpt-5.6-sol",
             "reasoning_effort": "high",
+            "task_name": "autoteam_boss_00_mission_1787106000",
             "fork_turns": "none",
         }
         ok, err = self.validator.validate_host_spawn_request(
@@ -268,6 +270,18 @@ skill_boss_bindings:
         self.assertFalse(ok)
         self.assertIn("HOST_MODEL_BINDING_ERROR", err)
         self.assertIn("reasoning_effort", err)
+
+        invalid_name = dict(spawn_request)
+        invalid_name["task_name"] = "/root/autoteam_boss_20260831"
+        ok, err = self.validator.validate_host_spawn_request(
+            "SOL_HIGH",
+            "gpt-5.6-sol",
+            "high",
+            spawn_schema,
+            invalid_name,
+        )
+        self.assertFalse(ok)
+        self.assertIn("HOST_AGENT_NAME_INVALID", err)
 
     def test_host_model_binding_rejects_inheritance_and_unproven_identity(self):
         ok, err = self.validator.validate_host_model_binding(

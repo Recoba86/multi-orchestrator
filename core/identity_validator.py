@@ -2,7 +2,25 @@
 Canonical Mission Identity & Packet Validator for Multi Orchestrator RC3.
 Provides pure, executable schema and identity validation functions.
 """
+import re
 from typing import Dict, Any, Tuple, Optional
+
+
+_HOST_AGENT_NAME_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
+
+def validate_host_agent_name(agent_name: str) -> Tuple[bool, Optional[str]]:
+    """Require the bare identifier accepted by the native Host agent_name field."""
+    if not isinstance(agent_name, str) or not agent_name:
+        return False, "HOST_AGENT_NAME_INVALID: task_name must be a non-empty string"
+    if not _HOST_AGENT_NAME_PATTERN.fullmatch(agent_name):
+        return (
+            False,
+            "HOST_AGENT_NAME_INVALID: task_name must contain only lowercase "
+            "letters, digits, and underscores",
+        )
+    return True, None
+
 
 def validate_mission_identity(identity: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     required_fields = [
