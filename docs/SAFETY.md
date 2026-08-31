@@ -25,6 +25,7 @@
 - A missing schema field, rejected override, or unavailable/mismatched Host-returned identity produces `HOST_MODEL_BINDING_ERROR` and stops the mission.
 - The Controller never substitutes the root/parent model, silently omits an override, or selects a post-spawn fallback to hide a binding failure.
 - Requested and effective identities are recorded separately in Mission Trace as `MATCH`, `MISMATCH`, or `UNPROVEN`; native allocation remains `HOST_EXTERNAL`.
+- Native `task_name` values are bare lowercase identifiers matching `^[a-z0-9_]+$`; invalid paths, hyphens, spaces, or uppercase names are rejected as `HOST_AGENT_NAME_INVALID` before submission.
 
 ---
 
