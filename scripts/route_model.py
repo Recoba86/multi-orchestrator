@@ -43,6 +43,7 @@ from core.runtime_routing_mode import (
 from core.runtime_routing_policy import (
     group_of,
     load_runtime_policy,
+    weights_for,
 )
 from core.runtime_routing_switch import (
     ROUTING_SWITCH_PATH_DEFAULT,
@@ -334,6 +335,15 @@ def main(argv: list[str] | None = None) -> int:
                 validator=validator,
                 domain_eligible=_is_domain_eligible,
             )
+            overlay = dec.table_used == "overlay"
+            declared = weights_for(policy, args.role, mode, overlay)
+            primary_ep = declared[0].endpoint_id if declared else None
+            if dec.selected_endpoint == primary_ep:
+                reason_str = "PRIMARY_PARALLEL" if args.ordinal > 0 else "PRIMARY_CONFIGURED"
+            elif health_excl and primary_ep in health_excl:
+                reason_str = "COOLDOWN"
+            else:
+                reason_str = "FALLBACK"
             event = RoutingEvent(
                 timestamp_utc=now_iso,
                 mode=mode.value,
@@ -351,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
                 algorithm_version=dec.selection_evidence.algorithm_version,
                 excluded_unverified=dec.excluded_unverified,
                 implementer_independence_group=None,
-                decision_reason="Role dispatch selected candidate",
+                decision_reason=reason_str,
             )
             output = {
                 "role": args.role,

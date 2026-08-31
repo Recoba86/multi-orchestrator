@@ -1,18 +1,18 @@
-"""Routing Telemetry and Target-Share Reporting (Task 9).
+"""Routing Telemetry, Decision Observability, and Role-Aware Model Telemetry (Task 9 & AutoTeam).
 
-Normative references:
-docs/superpowers/specs/2026-08-26-solmode-grokmode-weighted-routing-design.md (§4, §8)
-docs/superpowers/plans/2026-08-26-solmode-grokmode-weighted-routing.md (Task 9)
+Records routing decisions with candidate evaluation steps and reasons:
+- SELECTED / SKIPPED / FAILED
+- SAME_FAMILY / INDEPENDENT / PROVIDER_ERROR / FALLBACK / ESCALATION / UNAVAILABLE
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone, timedelta
 import json
 import os
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from core.model_availability import sanitize_identifier
 from core.runtime_routing_policy import RuntimePolicy
@@ -20,14 +20,17 @@ from core.runtime_routing_policy import RuntimePolicy
 __all__ = [
     "TELEMETRY_SCHEMA_VERSION",
     "TELEMETRY_PATH_DEFAULT",
+    "RoutingDecisionStep",
     "RoutingEvent",
     "TargetShareReport",
     "append_routing_event",
     "read_telemetry_events",
     "aggregate_telemetry",
+    "format_model_telemetry_table",
+    "format_routing_decisions_table",
 ]
 
-TELEMETRY_SCHEMA_VERSION = 1
+TELEMETRY_SCHEMA_VERSION = 2
 TELEMETRY_PATH_DEFAULT = Path.home() / ".agents" / "runtime-routing" / "routing-telemetry.jsonl"
 
 _STATE_DIR_MODE = 0o700
@@ -35,8 +38,17 @@ _STATE_FILE_MODE = 0o600
 
 
 @dataclass(frozen=True)
+class RoutingDecisionStep:
+    """One candidate evaluation decision step."""
+    role: str
+    candidate_model: str
+    result: str  # "SELECTED" | "SKIPPED" | "FAILED"
+    reason: str  # "INDEPENDENT" | "SAME_FAMILY" | "PROVIDER_ERROR" | "FALLBACK" | "ESCALATION" | "UNAVAILABLE"
+
+
+@dataclass(frozen=True)
 class RoutingEvent:
-    """Immutable single-dispatch routing telemetry record."""
+    """Immutable single-dispatch routing telemetry record with candidate evaluation trail."""
     timestamp_utc: str
     mode: str
     role: str
@@ -54,6 +66,12 @@ class RoutingEvent:
     excluded_unverified: tuple[str, ...]
     implementer_independence_group: Optional[str]
     decision_reason: str
+    decision_steps: tuple[RoutingDecisionStep, ...] = ()
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_hit_rate_pct: float = 0.0
+    requests_count: int = 1
     version: int = TELEMETRY_SCHEMA_VERSION
 
 
@@ -78,6 +96,15 @@ def append_routing_event(event: RoutingEvent, path: Optional[Path] = None) -> No
         raise RuntimeError(f"Refusing to write telemetry to symlink: {telemetry_path}")
 
     # Build sanitized record dict
+    steps_payload = []
+    for step in event.decision_steps:
+        steps_payload.append({
+            "role": sanitize_identifier(step.role),
+            "candidate_model": sanitize_identifier(step.candidate_model),
+            "result": sanitize_identifier(step.result),
+            "reason": sanitize_identifier(step.reason),
+        })
+
     payload_dict = {
         "version": event.version,
         "timestamp_utc": sanitize_identifier(event.timestamp_utc),
@@ -97,6 +124,12 @@ def append_routing_event(event: RoutingEvent, path: Optional[Path] = None) -> No
         "excluded_unverified": [sanitize_identifier(x) for x in event.excluded_unverified],
         "implementer_independence_group": sanitize_identifier(event.implementer_independence_group) if event.implementer_independence_group else None,
         "decision_reason": sanitize_identifier(event.decision_reason),
+        "decision_steps": steps_payload,
+        "prompt_tokens": event.prompt_tokens,
+        "completion_tokens": event.completion_tokens,
+        "cache_read_tokens": event.cache_read_tokens,
+        "cache_hit_rate_pct": event.cache_hit_rate_pct,
+        "requests_count": event.requests_count,
     }
 
     line = json.dumps(payload_dict, sort_keys=True) + "\n"
@@ -136,9 +169,23 @@ def read_telemetry_events(path: Optional[Path] = None) -> tuple[tuple[RoutingEve
                     continue
                 try:
                     data = json.loads(line)
-                    if not isinstance(data, dict) or data.get("version") != TELEMETRY_SCHEMA_VERSION:
+                    if not isinstance(data, dict) or data.get("version") not in (1, TELEMETRY_SCHEMA_VERSION):
                         malformed_count += 1
                         continue
+
+                    raw_steps = data.get("decision_steps", [])
+                    steps = []
+                    if isinstance(raw_steps, list):
+                        for s in raw_steps:
+                            if isinstance(s, dict):
+                                steps.append(
+                                    RoutingDecisionStep(
+                                        role=str(s.get("role", "")),
+                                        candidate_model=str(s.get("candidate_model", "")),
+                                        result=str(s.get("result", "")),
+                                        reason=str(s.get("reason", "")),
+                                    )
+                                )
 
                     events.append(
                         RoutingEvent(
@@ -159,6 +206,13 @@ def read_telemetry_events(path: Optional[Path] = None) -> tuple[tuple[RoutingEve
                             excluded_unverified=tuple(data.get("excluded_unverified", ())),
                             implementer_independence_group=data.get("implementer_independence_group"),
                             decision_reason=str(data.get("decision_reason", "")),
+                            decision_steps=tuple(steps),
+                            prompt_tokens=int(data.get("prompt_tokens", 0)),
+                            completion_tokens=int(data.get("completion_tokens", 0)),
+                            cache_read_tokens=int(data.get("cache_read_tokens", 0)),
+                            cache_hit_rate_pct=float(data.get("cache_hit_rate_pct", 0.0)),
+                            requests_count=int(data.get("requests_count", 1)),
+                            version=int(data.get("version", TELEMETRY_SCHEMA_VERSION)),
                         )
                     )
                 except Exception:
@@ -192,7 +246,6 @@ def aggregate_telemetry(
 
     total_all = len(filtered_events)
 
-    # Permanent target domains: gemini 45, supergrok 25, gpt_plus 17, cheap 7, opus 6
     permanent_targets = policy.global_targets if policy else {
         "gemini": 45.0,
         "supergrok": 25.0,
@@ -239,3 +292,89 @@ def aggregate_telemetry(
         window_hours=window.total_seconds() / 3600.0 if window else None,
         malformed_rows_count=malformed_count,
     )
+
+
+def format_model_telemetry_table(records: Sequence[Mapping[str, Any]]) -> str:
+    """
+    Format end-of-run Model Telemetry breakdown with separate Model+Role rows.
+    
+    Expected record shape:
+    {
+        "model": "GPT-5.6 Sol",
+        "role": "Boss",
+        "requests": 1,
+        "input_tokens": 12500,
+        "output_tokens": 850,
+        "cache_read_tokens": 42000,
+        "cache_hit_pct": 77.1
+    }
+    """
+    def _fmt_tokens(n: int) -> str:
+        if n >= 1_000_000:
+            return f"{n/1_000_000:.1f}M"
+        if n >= 1_000:
+            return f"{n/1_000:.1f}K"
+        return str(n)
+
+    lines = [
+        "📊 Model Telemetry",
+        "",
+        f"{'Model':<20} {'Reqs':>6} {'In':>9} {'Out':>8} {'Cache':>9} {'Hit':>7} {'Role':<12}",
+        "─" * 68,
+    ]
+
+    total_reqs = 0
+    total_in = 0
+    total_out = 0
+    total_cache = 0
+
+    for r in records:
+        model = str(r.get("model", "Unknown"))
+        role = str(r.get("role", "Worker"))
+        reqs = int(r.get("requests", 1))
+        in_tok = int(r.get("input_tokens", 0))
+        out_tok = int(r.get("output_tokens", 0))
+        cache_tok = int(r.get("cache_read_tokens", 0))
+        hit_pct = float(r.get("cache_hit_pct", 0.0))
+
+        total_reqs += reqs
+        total_in += in_tok
+        total_out += out_tok
+        total_cache += cache_tok
+
+        lines.append(
+            f"{model:<20} {reqs:>6} {_fmt_tokens(in_tok):>9} {_fmt_tokens(out_tok):>8} {_fmt_tokens(cache_tok):>9} {hit_pct:>6.1f}% {role:<12}"
+        )
+
+    lines.append("─" * 68)
+    overall_hit = (total_cache / (total_in + total_cache) * 100.0) if (total_in + total_cache) > 0 else 0.0
+    lines.append(
+        f"{'Total':<20} {total_reqs:>6} {_fmt_tokens(total_in):>9} {_fmt_tokens(total_out):>8} {_fmt_tokens(total_cache):>9} {overall_hit:>6.1f}%"
+    )
+    return "\n".join(lines)
+def format_routing_decisions_table(decisions: Sequence[RoutingDecisionStep | Mapping[str, str]]) -> str:
+    """Format compact Routing Decisions table."""
+    lines = [
+        "↪ Routing Decisions",
+        "",
+        f"{'Role':<12} {'Candidate':<24} {'Result':<12} {'Reason':<16}",
+        "─" * 66,
+    ]
+
+    for d in decisions:
+        if isinstance(d, RoutingDecisionStep):
+            role = d.role
+            cand = d.candidate_model
+            res = d.result
+            reas = d.reason
+        elif isinstance(d, dict):
+            role = str(d.get("role", ""))
+            cand = str(d.get("candidate", d.get("candidate_model", "")))
+            res = str(d.get("result", ""))
+            reas = str(d.get("reason", ""))
+        else:
+            continue
+
+        lines.append(f"{role:<12} {cand:<24} {res:<12} {reas:<16}")
+
+    return "\n".join(lines)
